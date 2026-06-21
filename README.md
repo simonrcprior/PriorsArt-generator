@@ -42,7 +42,15 @@ Start the browser-based generator at `http://localhost:4173`:
 npm run web
 ```
 
+or
+
+```bash
+npm run dev
+```
+
 In the UI, you can drag and drop XML files, pick a folder, generate the workbook, track progress, and download the result.
+
+If `npm run web` fails with `tsx` not recognized, run `npm install` first to restore the local dependencies.
 
 ### Generate
 
