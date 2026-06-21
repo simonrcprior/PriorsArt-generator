@@ -1,0 +1,44 @@
+{
+  "name": "priorsart-generator",
+  "version": "0.1.0",
+  "description": "Generator pipeline for producing .priorsart packages from source data.",
+  "main": "dist/index.js",
+  "scripts": {
+    "build": "tsc -p tsconfig.json",
+    "generate": "tsx src/cli/index.ts generate",
+    "export-xlsx": "tsx src/cli/index.ts export-xlsx",
+    "web": "tsx src/web/server.ts",
+    "test": "vitest run"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/simonrcprior/PriorsArt-generator.git"
+  },
+  "keywords": [],
+  "author": "",
+  "license": "ISC",
+  "type": "commonjs",
+  "files": [
+    "dist"
+  ],
+  "bin": {
+    "priorsart-generator": "dist/cli/index.js"
+  },
+  "bugs": {
+    "url": "https://github.com/simonrcprior/PriorsArt-generator/issues"
+  },
+  "homepage": "https://github.com/simonrcprior/PriorsArt-generator#readme",
+  "dependencies": {
+    "commander": "^15.0.0",
+    "fast-xml-parser": "^5.9.3",
+    "jszip": "^3.10.1",
+    "xlsx": "^0.18.5",
+    "zod": "^4.4.3"
+  },
+  "devDependencies": {
+    "@types/node": "^26.0.0",
+    "tsx": "^4.22.4",
+    "typescript": "^6.0.3",
+    "vitest": "^4.1.9"
+  }
+}
