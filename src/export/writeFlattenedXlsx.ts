@@ -374,6 +374,12 @@ function buildMyText2(
   commitDate: number | null,
   earliestN: number | null
 ): string {
+  if (thisType === "J") {
+    const dueSegment = thisDate !== null ? ` / Due:${formatExcelSerialDate(thisDate)}` : "";
+    const commitSegment = formatDateSegment("Commit", commitDate);
+    return thisOrderNum ? `${thisType} /${thisOrderNum}${dueSegment}${commitSegment}` : `${thisType}${dueSegment}${commitSegment}`;
+  }
+
   return `${thisType} /${thisOrderNum} /${thisLine} /${thisRel} /${thisPeggedQty} /${thisQty} / Due:${formatExcelSerialDate(thisDate)}${formatDateSegment(
     "Promise",
     promiseDate

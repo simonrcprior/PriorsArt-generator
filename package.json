@@ -4,6 +4,7 @@
   "description": "Generator pipeline for producing .priorsart packages from source data.",
   "main": "dist/index.js",
   "scripts": {
+    "dev": "npm run web",
     "build": "tsc -p tsconfig.json",
     "generate": "tsx src/cli/index.ts generate",
     "export-xlsx": "tsx src/cli/index.ts export-xlsx",
