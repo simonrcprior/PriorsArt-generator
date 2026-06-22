@@ -92,6 +92,11 @@ describe("generateFromXlsx", () => {
 
     expect(pkg.manifest.counts.salesOrders).toBe(1);
     expect(pkg.manifest.qualitySummary.ambiguousDateCount).toBe(2);
+    expect(pkg.manifest.schemaVersion).toBe("3");
+    expect(pkg.manifest.qualitySummary.nestLevelCounts["1"]).toBe(1);
+    expect(pkg.datasets.peggingLinks[0]?.nest).toBe(1);
+    expect(pkg.datasets.peggingLinks[0]?.path).toEqual(["PEG-1"]);
+    expect(pkg.datasets.peggingLinks[0]?.duplicate).toBe(false);
 
     const zipBytes = await fs.readFile(outputPath);
     const zip = await JSZip.loadAsync(zipBytes);
@@ -106,7 +111,9 @@ describe("generateFromXlsx", () => {
     const quality = JSON.parse(qualityJson ?? "{}");
 
     expect(manifest.datePolicy.defaultDateOrder).toBe("MDY");
+    expect(manifest.schemaVersion).toBe("3");
     expect(quality.ambiguousDateCount).toBe(2);
+    expect(quality.nestLevelCounts["1"]).toBe(1);
     expect(Array.isArray(quality.warnings)).toBe(true);
   });
 });

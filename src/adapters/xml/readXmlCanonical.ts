@@ -20,6 +20,45 @@ interface XmlReadResult {
   fileNames: string[];
 }
 
+interface LinkHierarchyInfo {
+  nest: number;
+  nestText: string;
+  parentLinkId: string | null;
+  parentDemandId: string | null;
+  parentSupplyId: string | null;
+  path: string[];
+}
+
+interface XmlLinkRowInfo {
+  linkId: string;
+  pegNum: string;
+  demandSeq: string;
+  supplySeq: string;
+  demandId: string;
+  supplyId: string;
+  quantity: number;
+  partNumber: string;
+}
+
+interface DemandHierarchyMeta {
+  demandSeq: string;
+  demandType: string;
+  demandOrdNum: string;
+}
+
+interface SupplyHierarchyMeta {
+  supplySeq: string;
+  supplyType: string;
+  supplyOrdNum: string;
+}
+
+interface JobSupplySummary {
+  commitDate?: string;
+  minDue?: string;
+  remainingOps: string;
+  remainingOpsh: string;
+}
+
 export type XmlRow = Record<string, unknown>;
 export type XmlFileKey = "demands" | "jobs" | "links" | "poDetails" | "salesOrders" | "supplies" | "partDescriptions";
 type XmlFileMap = Record<XmlFileKey, string>;
@@ -104,6 +143,163 @@ function mapSupplyTypeToCanonical(value: string | undefined): Supply["supplyType
     return "ON_HAND";
   }
   return "WO";
+}
+
+function compareTokens(a: string, b: string): number {
+  const aNum = Number(a);
+  const bNum = Number(b);
+  const aIsNum = Number.isFinite(aNum);
+  const bIsNum = Number.isFinite(bNum);
+  if (aIsNum && bIsNum) {
+    return aNum - bNum;
+  }
+  return a.localeCompare(b);
+}
+
+function parseSalesOrderSourceId(sourceId?: string): { orderNum: string; line: string; rel: string } {
+  if (!sourceId) {
+    return { orderNum: "", line: "", rel: "" };
+  }
+
+  const match = sourceId.match(/^SO-(.+)-([^\-]+)-([^\-]+)$/);
+  if (!match) {
+    return { orderNum: sourceId, line: "", rel: "" };
+  }
+
+  return {
+    orderNum: match[1] ?? "",
+    line: match[2] ?? "",
+    rel: match[3] ?? "",
+  };
+}
+
+function supplyOrderKey(orderNum: string, orderLine: string, orderRel: string): string {
+  return `${orderNum}|${orderLine}|${orderRel}`;
+}
+
+function buildLinkHierarchy(
+  links: XmlLinkRowInfo[],
+  demandMetaBySeq: Map<string, DemandHierarchyMeta>,
+  demandSeqsByOrderNum: Map<string, string[]>,
+  supplyMetaBySeq: Map<string, SupplyHierarchyMeta>
+): Map<string, LinkHierarchyInfo> {
+  const linksByDemandSeq = new Map<string, XmlLinkRowInfo[]>();
+  for (const link of links) {
+    const group = linksByDemandSeq.get(link.demandSeq);
+    if (group) {
+      group.push(link);
+    } else {
+      linksByDemandSeq.set(link.demandSeq, [link]);
+    }
+  }
+
+  for (const group of linksByDemandSeq.values()) {
+    group.sort((a, b) => {
+      const peg = compareTokens(a.pegNum, b.pegNum);
+      if (peg !== 0) {
+        return peg;
+      }
+      const sup = compareTokens(a.supplySeq, b.supplySeq);
+      if (sup !== 0) {
+        return sup;
+      }
+      return a.linkId.localeCompare(b.linkId);
+    });
+  }
+
+  const rootDemandSeqs = [...new Set(
+    [...demandMetaBySeq.values()]
+      .filter((meta) => meta.demandType === "S")
+      .map((meta) => meta.demandSeq)
+  )].sort(compareTokens);
+
+  const hierarchyByLinkId = new Map<string, LinkHierarchyInfo>();
+
+  const assignHierarchy = (
+    link: XmlLinkRowInfo,
+    nest: number,
+    parentLinkId: string | null,
+    parentDemandId: string | null,
+    parentSupplyId: string | null,
+    parentPath: string[]
+  ): void => {
+    if (hierarchyByLinkId.has(link.linkId)) {
+      return;
+    }
+
+    const path = [...parentPath, link.linkId];
+    hierarchyByLinkId.set(link.linkId, {
+      nest,
+      nestText: ">".repeat(nest),
+      parentLinkId,
+      parentDemandId,
+      parentSupplyId,
+      path,
+    });
+  };
+
+  const walk = (
+    demandSeq: string,
+    nest: number,
+    parentLinkId: string | null,
+    parentDemandId: string | null,
+    parentSupplyId: string | null,
+    parentPath: string[],
+    visitedDemandSeqs: Set<string>
+  ): void => {
+    if (nest > 50) {
+      return;
+    }
+
+    const linksForDemand = linksByDemandSeq.get(demandSeq) ?? [];
+    const currentDemand = demandMetaBySeq.get(demandSeq);
+
+    for (const link of linksForDemand) {
+      assignHierarchy(link, nest, parentLinkId, parentDemandId, parentSupplyId, parentPath);
+
+      const supplyMeta = supplyMetaBySeq.get(link.supplySeq);
+      const downstreamDemand = demandMetaBySeq.get(link.supplySeq);
+      const fallbackOrderNum = supplyMeta?.supplyType === "J" ? downstreamDemand?.demandOrdNum ?? "" : "";
+      const effectiveSupplyOrdNum = (supplyMeta?.supplyOrdNum ?? "") || fallbackOrderNum;
+      const parentDemandOrdNum = currentDemand?.demandOrdNum ?? "";
+      const recursionAllowed =
+        supplyMeta?.supplyType === "J" &&
+        effectiveSupplyOrdNum.length > 0 &&
+        effectiveSupplyOrdNum !== parentDemandOrdNum;
+
+      if (!recursionAllowed) {
+        continue;
+      }
+
+      const candidateSeqs = (demandSeqsByOrderNum.get(effectiveSupplyOrdNum) ?? [])
+        .filter((seq) => (demandMetaBySeq.get(seq)?.demandOrdNum ?? "").length > 0)
+        .sort(compareTokens);
+
+      for (const childSeq of candidateSeqs) {
+        if (childSeq === demandSeq || visitedDemandSeqs.has(childSeq)) {
+          continue;
+        }
+
+        visitedDemandSeqs.add(childSeq);
+        walk(
+          childSeq,
+          nest + 1,
+          link.linkId,
+          link.demandId,
+          link.supplyId,
+          [...parentPath, link.linkId],
+          visitedDemandSeqs
+        );
+        visitedDemandSeqs.delete(childSeq);
+      }
+    }
+  };
+
+  for (const demandSeq of rootDemandSeqs) {
+    walk(demandSeq, 1, null, null, null, [], new Set([demandSeq]));
+  }
+
+  return hierarchyByLinkId;
 }
 
 function collectResultsNodes(node: unknown, acc: XmlRow[]): void {
@@ -275,6 +471,10 @@ export async function readXmlCanonical(
   const supplyMap = new Map<string, Supply>();
   const peggingMap = new Map<string, PeggingLink>();
   const partMap = new Map<string, PartCatalogItem>();
+  const demandMetaBySeq = new Map<string, DemandHierarchyMeta>();
+  const demandSeqsByOrderNum = new Map<string, string[]>();
+  const supplyMetaBySeq = new Map<string, SupplyHierarchyMeta>();
+  const xmlLinkInfos: XmlLinkRowInfo[] = [];
 
   const today = new Date().toISOString().slice(0, 10);
 
@@ -376,6 +576,8 @@ export async function readXmlCanonical(
   const demandRows = rowsByFile.demands;
   demandRows.forEach((row, index) => {
     const demandSeq = asString(row.PegDmdMst_DemandSeq);
+    const company = asString(row.PegDmdMst_Company) ?? "";
+    const plant = asString(row.PegDmdMst_Plant) ?? "";
     const partNumber = asString(row.PegDmdMst_PartNum);
     const quantity = asNumber(row.PegDmdMst_DemandQty);
 
@@ -411,6 +613,23 @@ export async function readXmlCanonical(
     const demandOrdLine = asString(row.PegDmdMst_DemandOrdLine) ?? "0";
     const demandOrdRel = asString(row.PegDmdMst_DemandOrdRel) ?? "0";
 
+    const demandType = asString(row.PegDmdMst_DemandType) ?? "";
+    demandMetaBySeq.set(demandSeq, {
+      demandSeq,
+      demandType,
+      demandOrdNum: demandOrdNum ?? "",
+    });
+    if (demandOrdNum) {
+      const existing = demandSeqsByOrderNum.get(demandOrdNum);
+      if (existing) {
+        if (!existing.includes(demandSeq)) {
+          existing.push(demandSeq);
+        }
+      } else {
+        demandSeqsByOrderNum.set(demandOrdNum, [demandSeq]);
+      }
+    }
+
     let sourceType: Demand["sourceType"] = "MANUAL";
     let sourceId: string | undefined;
     if (demandOrdNum) {
@@ -431,6 +650,8 @@ export async function readXmlCanonical(
 
     const demand: Demand = {
       id,
+      ...(company ? { company } : {}),
+      ...(plant ? { plant } : {}),
       partNumber,
       quantity,
       dueDate,
@@ -450,6 +671,81 @@ export async function readXmlCanonical(
 
   const linkRows = rowsByFile.links;
   const supplyRows = rowsByFile.supplies;
+  const poRows = rowsByFile.poDetails;
+  const poByOrderKey = new Map<string, XmlRow>();
+  for (const row of poRows) {
+    const poNum = asString(row.PORel_PONum) ?? "";
+    const poLine = asString(row.PORel_POLine) ?? "0";
+    const poRel = asString(row.PORel_PORelNum) ?? "0";
+    if (!poNum) {
+      continue;
+    }
+    poByOrderKey.set(supplyOrderKey(poNum, poLine, poRel), row);
+  }
+
+  const jobRowsForSummary = rowsByFile.jobs;
+  const jobRowsByKey = new Map<string, XmlRow[]>();
+  for (const row of jobRowsForSummary) {
+    const company = asString(row.JobHead_Company) ?? "";
+    const plant = asString(row.JobHead_Plant) ?? "";
+    const jobNum = asString(row.Calculated_jobhead_jobnum) || asString(row.JobHead_JobNum);
+    if (!jobNum) {
+      continue;
+    }
+    const key = `${company}|${plant}|${jobNum}`;
+    const existing = jobRowsByKey.get(key);
+    if (existing) {
+      existing.push(row);
+    } else {
+      jobRowsByKey.set(key, [row]);
+    }
+  }
+
+  const jobSummaryByKey = new Map<string, JobSupplySummary>();
+  for (const [key, rows] of jobRowsByKey.entries()) {
+    const openRows = rows.filter((row) => (asString(row.JobOper_OpComplete) ?? "").toLowerCase() !== "true");
+    const minDue = openRows
+      .map((row, index) =>
+        parseDateWithPolicy(normalizeXmlDate(row.JobOper_DueDate), datePolicy.defaultDateOrder, diagnostics, {
+          dataset: "supplies",
+          row: index + 1,
+          field: "JobOper_DueDate",
+        }).isoDate
+      )
+      .filter((value): value is string => Boolean(value))
+      .sort()[0];
+
+    const commitDate = rows
+      .map((row, index) =>
+        parseDateWithPolicy(normalizeXmlDate(row.JobHead_CommitDate_c), datePolicy.defaultDateOrder, diagnostics, {
+          dataset: "supplies",
+          row: index + 1,
+          field: "JobHead_CommitDate_c",
+        }).isoDate
+      )
+      .filter((value): value is string => Boolean(value))
+      .sort()[0];
+
+    const remainingOps = openRows
+      .map((row) => `${asString(row.JobOper_OprSeq) ?? ""}>${asString(row.JobOper_OpCode) ?? ""} Due: ${asString(normalizeXmlDate(row.JobOper_DueDate)) ?? ""}`)
+      .join("\n");
+    const remainingOpsh = openRows
+      .map(
+        (row) =>
+          `${asString(row.JobOper_OprSeq) ?? ""}>${asString(row.JobOper_OpCode) ?? ""} Due: ${asString(normalizeXmlDate(row.JobOper_DueDate)) ?? ""} SetH: ${asString(
+            row.JobOper_EstSetHours
+          ) ?? ""} RunH: ${asString(row.JobOper_EstProdHours) ?? ""}`
+      )
+      .join("\n");
+
+    const summary: JobSupplySummary = {
+      remainingOps,
+      remainingOpsh,
+      ...(commitDate ? { commitDate } : {}),
+      ...(minDue ? { minDue } : {}),
+    };
+    jobSummaryByKey.set(key, summary);
+  }
 
   supplyRows.forEach((row, index) => {
     const supplySeq = asString(row.PegSupMst_SupplySeq);
@@ -484,26 +780,68 @@ export async function readXmlCanonical(
     }
 
     const id = `SUP-${supplySeq}`;
+    const company = asString(row.PegSupMst_Company) ?? "";
+    const plant = asString(row.PegSupMst_Plant) ?? "";
     const supplyOrdNum = asString(row.PegSupMst_SupplyOrdNum) ?? "";
     const supplyOrdLine = asString(row.PegSupMst_SupplyOrdLine) ?? "0";
     const supplyOrdRel = asString(row.PegSupMst_SupplyOrdRel) ?? "0";
     const sourceId = `${supplyOrdNum}-${supplyOrdLine}-${supplyOrdRel}`;
     const reportDateRaw = asString(row.Calculated_ReportDate ?? row.PegSupMst_ReportDate);
     const reportDate = reportDateRaw ? reportDateRaw.replace(/\//g, "-").slice(0, 10) : undefined;
+    const poRow = poByOrderKey.get(supplyOrderKey(supplyOrdNum, supplyOrdLine, supplyOrdRel));
+    const promiseDate = parseDateWithPolicy(
+      normalizeXmlDate(poRow?.PORel_PromiseDt ?? poRow?.PORel_DueDate ?? poRow?.POHeader_OrderDate),
+      datePolicy.defaultDateOrder,
+      diagnostics,
+      {
+        dataset: "supplies",
+        row: index + 1,
+        field: "PORel_PromiseDt",
+      }
+    ).isoDate;
+    const jobSummary = jobSummaryByKey.get(`${company}|${plant}|${supplyOrdNum}`);
+
+    const rawSupplyType = asString(row.PegSupMst_SupplyType) ?? "";
+    supplyMetaBySeq.set(supplySeq, {
+      supplySeq,
+      supplyType: rawSupplyType,
+      supplyOrdNum,
+    });
 
     if (!supplyMap.has(id)) {
       const supply: Supply = {
         id,
+        ...(company ? { company } : {}),
+        ...(plant ? { plant } : {}),
         partNumber,
         quantity,
         availableDate,
-        supplyType: mapSupplyTypeToCanonical(asString(row.PegSupMst_SupplyType)),
+        supplyType: mapSupplyTypeToCanonical(rawSupplyType),
       };
       if (reportDate) {
         supply.reportDate = reportDate;
       }
       if (supplyOrdNum) {
         supply.sourceId = sourceId;
+      }
+      if (promiseDate) {
+        supply.promiseDate = promiseDate;
+      }
+      if (jobSummary?.commitDate) {
+        supply.commitDate = jobSummary.commitDate;
+      }
+      if (jobSummary?.minDue) {
+        supply.minDue = jobSummary.minDue;
+      }
+      if (jobSummary?.remainingOps) {
+        supply.remainingOps = jobSummary.remainingOps;
+      }
+      if (jobSummary?.remainingOpsh) {
+        supply.remainingOpsh = jobSummary.remainingOpsh;
+      }
+      const vendorName = asString(poRow?.Vendor_Name);
+      if (vendorName) {
+        supply.vendorName = vendorName;
       }
       supplyMap.set(id, supply);
     }
@@ -536,8 +874,12 @@ export async function readXmlCanonical(
     const linkId = `PEG-${pegNum}`;
 
     if (!demandMap.has(demandId)) {
+      const company = asString(row.PegLink_Company) ?? "";
+      const plant = asString(row.PegLink_Plant) ?? "";
       demandMap.set(demandId, {
         id: demandId,
+        ...(company ? { company } : {}),
+        ...(plant ? { plant } : {}),
         partNumber,
         quantity,
         dueDate: today,
@@ -552,8 +894,12 @@ export async function readXmlCanonical(
 
     const existingSupply = supplyMap.get(supplyId);
     if (!existingSupply) {
+      const company = asString(row.PegLink_Company) ?? "";
+      const plant = asString(row.PegLink_Plant) ?? "";
       supplyMap.set(supplyId, {
         id: supplyId,
+        ...(company ? { company } : {}),
+        ...(plant ? { plant } : {}),
         partNumber,
         quantity,
         availableDate: today,
@@ -563,11 +909,28 @@ export async function readXmlCanonical(
     }
 
     if (!peggingMap.has(linkId)) {
+      xmlLinkInfos.push({
+        linkId,
+        pegNum,
+        demandSeq,
+        supplySeq,
+        demandId,
+        supplyId,
+        quantity,
+        partNumber,
+      });
       peggingMap.set(linkId, {
         id: linkId,
         demandId,
         supplyId,
         quantity,
+        nest: 1,
+        nestText: ">",
+        parentLinkId: null,
+        parentDemandId: null,
+        parentSupplyId: null,
+        path: [linkId],
+        duplicate: false,
       });
     }
 
@@ -576,7 +939,6 @@ export async function readXmlCanonical(
     }
   });
 
-  const poRows = rowsByFile.poDetails;
   poRows.forEach((row, index) => {
     const poNum = asString(row.PORel_PONum);
     const poLine = asString(row.PORel_POLine) ?? "0";
@@ -614,13 +976,20 @@ export async function readXmlCanonical(
     const id = `PO-${poNum}-${poLine}-${poRel}`;
     if (!supplyMap.has(id)) {
       const sourceId = `${poNum}-${poLine}-${poRel}`;
+      const vendorName = asString(row.Vendor_Name);
+      const company = asString(row.PORel_Company) ?? "";
+      const plant = asString(row.PORel_Plant) ?? "";
       supplyMap.set(id, {
         id,
+        ...(company ? { company } : {}),
+        ...(plant ? { plant } : {}),
         partNumber,
         quantity,
         availableDate,
         supplyType: "PO",
         sourceId,
+        promiseDate: availableDate,
+        ...(vendorName ? { vendorName } : {}),
       });
     }
 
@@ -666,6 +1035,125 @@ export async function readXmlCanonical(
       existing.lead = lead;
     }
   });
+
+  const hierarchyByLinkId = buildLinkHierarchy(xmlLinkInfos, demandMetaBySeq, demandSeqsByOrderNum, supplyMetaBySeq);
+  for (const linkInfo of xmlLinkInfos) {
+    const existing = peggingMap.get(linkInfo.linkId);
+    if (!existing) {
+      continue;
+    }
+    const hierarchy = hierarchyByLinkId.get(linkInfo.linkId);
+    if (!hierarchy) {
+      diagnostics.warn({
+        code: "XML_LINK_DROPPED_UNANCHORED",
+        message: `Dropped link '${linkInfo.linkId}' because it was not reachable from an SO-rooted demand chain`,
+        dataset: "peggingLinks",
+      });
+      diagnostics.incrementDroppedRows();
+      peggingMap.delete(linkInfo.linkId);
+      continue;
+    }
+    peggingMap.set(linkInfo.linkId, {
+      ...existing,
+      nest: hierarchy.nest,
+      nestText: hierarchy.nestText,
+      parentLinkId: hierarchy.parentLinkId,
+      parentDemandId: hierarchy.parentDemandId,
+      parentSupplyId: hierarchy.parentSupplyId,
+      path: hierarchy.path,
+      duplicate: false,
+    });
+  }
+
+  // Propagate SO anchor source through hierarchy where child demands do not carry it explicitly.
+  const linksByNest = [...peggingMap.values()].sort((a, b) => a.nest - b.nest || compareTokens(a.id, b.id));
+  const linkById = new Map(linksByNest.map((link) => [link.id, link]));
+  for (const link of linksByNest) {
+    const demand = demandMap.get(link.demandId);
+    if (!demand) {
+      continue;
+    }
+    if (demand.sourceType === "SO" && demand.sourceId) {
+      continue;
+    }
+    if (!link.parentLinkId) {
+      continue;
+    }
+    const parent = linkById.get(link.parentLinkId);
+    if (!parent) {
+      continue;
+    }
+    const parentDemand = demandMap.get(parent.demandId);
+    if (parentDemand?.sourceType === "SO" && parentDemand.sourceId) {
+      demand.sourceType = "SO";
+      demand.sourceId = parentDemand.sourceId;
+    }
+  }
+
+  // Drop roots that still cannot be anchored to a sales order (parity with XML XLSX LOB behavior).
+  const droppedRootIds = new Set<string>();
+  for (const link of [...peggingMap.values()]) {
+    if (link.nest !== 1) {
+      continue;
+    }
+    const demand = demandMap.get(link.demandId);
+    if (demand?.sourceType === "SO" && demand.sourceId) {
+      continue;
+    }
+    droppedRootIds.add(link.id);
+    diagnostics.warn({
+      code: "XML_LINK_DROPPED_NO_SO_ANCHOR",
+      message: `Dropped root link '${link.id}' because demand '${link.demandId}' has no SO anchor`,
+      dataset: "peggingLinks",
+    });
+    diagnostics.incrementDroppedRows();
+  }
+
+  if (droppedRootIds.size > 0) {
+    for (const link of [...peggingMap.values()]) {
+      const rootId = link.path[0];
+      if (rootId && droppedRootIds.has(rootId)) {
+        peggingMap.delete(link.id);
+      }
+    }
+  }
+
+  // Tag duplicate-like multiplicity explicitly for contract consumers.
+  const duplicateGroups = new Map<string, PeggingLink[]>();
+  for (const link of peggingMap.values()) {
+    const demand = demandMap.get(link.demandId);
+    const supply = supplyMap.get(link.supplyId);
+    const so = parseSalesOrderSourceId(demand?.sourceId);
+    const signature = [
+      demand?.partNumber ?? "",
+      so.orderNum,
+      so.line,
+      so.rel,
+      String(link.nest),
+      supply?.partNumber ?? "",
+      supply?.availableDate ?? "",
+      String(link.quantity),
+    ].join("|");
+    const group = duplicateGroups.get(signature);
+    if (group) {
+      group.push(link);
+    } else {
+      duplicateGroups.set(signature, [link]);
+    }
+  }
+
+  for (const group of duplicateGroups.values()) {
+    const isDuplicateGroup = group.length > 1;
+    for (const link of group) {
+      link.duplicate = isDuplicateGroup;
+      if (isDuplicateGroup) {
+        link.duplicateReason = "lob-signature-collision";
+      } else {
+        delete link.duplicateReason;
+      }
+      peggingMap.set(link.id, link);
+    }
+  }
 
   const datasets: CanonicalDatasets = {
     salesOrders: [...salesOrderMap.values()],

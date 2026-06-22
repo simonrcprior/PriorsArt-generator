@@ -4,6 +4,10 @@ import http from "node:http";
 import os from "node:os";
 import path from "node:path";
 import { exportFlattenedXlsx, ExportProgressUpdate } from "../pipeline/exportXlsx";
+import { generateFromXml } from "../pipeline/generate";
+
+type OutputFormat = "priorsart" | "xlsx";
+type RoleMode = "user" | "admin";
 
 type UploadFile = {
   name: string;
@@ -16,6 +20,7 @@ type JobState = {
   status: "queued" | "running" | "done" | "error";
   progress: number;
   stage: string;
+  outputFormat: OutputFormat;
   detail?: string;
   error?: string;
   outputFile?: string;
@@ -23,6 +28,7 @@ type JobState = {
 };
 
 const PORT = Number(process.env.PORT ?? 4173);
+const XLSX_EXPORT_ENABLED = process.env.PRIORSART_ALLOW_XLSX_EXPORT === "1";
 const jobs = new Map<string, JobState>();
 
 const html = `<!doctype html>
@@ -306,8 +312,26 @@ const html = `<!doctype html>
             <div class="subtle">Saved locally</div>
           </div>
           <label>
+            Role
+            <select id="roleMode">
+              <option value="user" selected>User</option>
+              <option value="admin">Admin</option>
+            </select>
+          </label>
+          <label id="adminKeyWrap" style="display:none">
+            Admin access key
+            <input id="adminKey" type="password" placeholder="Enter admin key" autocomplete="off" />
+          </label>
+          <label id="outputFormatWrap" style="display:none">
+            Output format
+            <select id="outputFormat">
+              <option value="priorsart" selected>Contract compliant .priorsart</option>
+              <option value="xlsx">Flattened .xlsx (admin only)</option>
+            </select>
+          </label>
+          <label>
             Output file name
-            <input id="outputName" type="text" value="processedData1.generated.xlsx" />
+            <input id="outputName" type="text" value="" />
           </label>
           <label>
             Date order
@@ -326,11 +350,11 @@ const html = `<!doctype html>
               <h2>Progress</h2>
               <div class="subtle" id="progressHint">Waiting</div>
             </div>
-            <div id="runSummary" class="run-summary">No completed export yet. The latest workbook summary will appear here after the first successful run.</div>
+            <div id="runSummary" class="run-summary">No completed run yet. The latest output summary will appear here after the first successful run.</div>
             <div class="status"><strong id="stage">Idle</strong><span id="percent">0%</span></div>
             <div class="progress-bar"><div id="bar"></div></div>
             <div id="message" class="message">Ready when you are.</div>
-            <a id="download" class="download" href="#" style="display:none" download>Download workbook</a>
+            <a id="download" class="download" href="#" style="display:none" download>Download output</a>
           </div>
 
           <div class="card">
@@ -349,6 +373,7 @@ const html = `<!doctype html>
   </div>
 
   <script>
+    const WEB_XLSX_ENABLED = ${XLSX_EXPORT_ENABLED ? "true" : "false"};
     const PREF_KEY = 'priorsart-web-prefs';
     const dropzone = document.getElementById('dropzone');
     const fileInput = document.getElementById('fileInput');
@@ -357,6 +382,11 @@ const html = `<!doctype html>
     const pickFolderBtn = document.getElementById('pickFolderBtn');
     const filesEl = document.getElementById('files');
     const goBtn = document.getElementById('goBtn');
+    const roleMode = document.getElementById('roleMode');
+    const adminKeyWrap = document.getElementById('adminKeyWrap');
+    const adminKey = document.getElementById('adminKey');
+    const outputFormatWrap = document.getElementById('outputFormatWrap');
+    const outputFormat = document.getElementById('outputFormat');
     const outputName = document.getElementById('outputName');
     const dateOrder = document.getElementById('dateOrder');
     const stageEl = document.getElementById('stage');
@@ -371,7 +401,62 @@ const html = `<!doctype html>
 
     let selectedFiles = [];
     let pollTimer = null;
-    let prefs = { outputName: 'processedData1.generated.xlsx', dateOrder: 'YMD', recentRuns: [], lastRun: null };
+    let prefs = { roleMode: 'user', outputFormat: 'priorsart', outputName: '', dateOrder: 'YMD', recentRuns: [], lastRun: null };
+
+    function currentDateStamp() {
+      const now = new Date();
+      const dd = String(now.getDate()).padStart(2, '0');
+      const mmm = ['JAN', 'FEB', 'MAR', 'APR', 'MAY', 'JUN', 'JUL', 'AUG', 'SEP', 'OCT', 'NOV', 'DEC'][now.getMonth()] || 'JAN';
+      const yyyy = String(now.getFullYear());
+      return dd + mmm + yyyy;
+    }
+
+    function defaultOutputName(format) {
+      return format === 'xlsx'
+        ? 'generated' + currentDateStamp() + '.xlsx'
+        : 'generated' + currentDateStamp() + '.priorsart';
+    }
+
+    function isLegacyOutputName(value) {
+      return /^processedData\.generated\.(xlsx|priorsart)$/i.test((value || '').trim());
+    }
+
+    function isGeneratedDateOutputName(value, format) {
+      const ext = format === 'xlsx' ? 'xlsx' : 'priorsart';
+      return new RegExp('^generated\\d{2}[A-Z]{3}\\d{4}\\.' + ext + '$', 'i').test((value || '').trim());
+    }
+
+    function setOutputNameDefault(format) {
+      const next = defaultOutputName(format);
+      outputName.value = next;
+      prefs.outputName = next;
+    }
+
+    function normalizeOutputName(value, format) {
+      const trimmed = (value || '').trim();
+      const ext = format === 'xlsx' ? '.xlsx' : '.priorsart';
+      if (!trimmed) return defaultOutputName(format);
+      if (trimmed.toLowerCase().endsWith(ext)) return trimmed;
+      return trimmed.replace(/\.(xlsx|priorsart)$/i, '') + ext;
+    }
+
+    function applyRoleAndFormatRules() {
+      if (!WEB_XLSX_ENABLED) {
+        outputFormat.value = 'priorsart';
+      }
+
+      const isAdmin = roleMode.value === 'admin';
+      const canChooseXlsx = WEB_XLSX_ENABLED && isAdmin;
+      outputFormat.querySelector('option[value="xlsx"]').disabled = !canChooseXlsx;
+      outputFormatWrap.style.display = isAdmin ? '' : 'none';
+
+      if (!canChooseXlsx && outputFormat.value === 'xlsx') {
+        outputFormat.value = 'priorsart';
+      }
+
+      adminKeyWrap.style.display = 'none';
+      outputName.value = normalizeOutputName(outputName.value, outputFormat.value);
+    }
 
     function normalizeRun(value) {
       if (!value || typeof value !== 'object') return null;
@@ -380,8 +465,13 @@ const html = `<!doctype html>
         ? item.files.filter((file) => typeof file === 'string' && file.trim())
         : [];
       return {
-        signature: typeof item.signature === 'string' ? item.signature : files.join('|') + '|' + (typeof item.outputName === 'string' ? item.outputName : '') + '|' + (typeof item.dateOrder === 'string' ? item.dateOrder : 'YMD'),
-        outputName: typeof item.outputName === 'string' && item.outputName.trim() ? item.outputName : 'processedData1.generated.xlsx',
+        signature: typeof item.signature === 'string' ? item.signature : files.join('|') + '|' + (typeof item.outputName === 'string' ? item.outputName : '') + '|' + (typeof item.outputFormat === 'string' ? item.outputFormat : 'priorsart') + '|' + (typeof item.dateOrder === 'string' ? item.dateOrder : 'YMD'),
+        roleMode: item.roleMode === 'admin' ? 'admin' : 'user',
+        outputFormat: item.outputFormat === 'xlsx' ? 'xlsx' : 'priorsart',
+        outputName:
+          typeof item.outputName === 'string' && item.outputName.trim()
+            ? item.outputName
+            : defaultOutputName(item.outputFormat === 'xlsx' ? 'xlsx' : 'priorsart'),
         dateOrder: ['YMD', 'MDY', 'DMY'].includes(item.dateOrder) ? item.dateOrder : 'YMD',
         files,
         rows: typeof item.rows === 'string' ? item.rows : '',
@@ -401,8 +491,11 @@ const html = `<!doctype html>
         if (raw) {
           const parsed = JSON.parse(raw);
           if (parsed && typeof parsed === 'object') {
+            const parsedOutputFormat = parsed.outputFormat === 'xlsx' ? 'xlsx' : 'priorsart';
             prefs = {
-              outputName: typeof parsed.outputName === 'string' && parsed.outputName.trim() ? parsed.outputName : prefs.outputName,
+              roleMode: parsed.roleMode === 'admin' ? 'admin' : prefs.roleMode,
+              outputFormat: parsedOutputFormat,
+              outputName: typeof parsed.outputName === 'string' && parsed.outputName.trim() ? parsed.outputName : defaultOutputName(parsedOutputFormat),
               dateOrder: ['YMD', 'MDY', 'DMY'].includes(parsed.dateOrder) ? parsed.dateOrder : prefs.dateOrder,
               recentRuns: Array.isArray(parsed.recentRuns) ? parsed.recentRuns.slice(0, 5) : [],
               lastRun: normalizeRun(parsed.lastRun),
@@ -412,8 +505,18 @@ const html = `<!doctype html>
       } catch {
         // Ignore malformed local state.
       }
+      roleMode.value = prefs.roleMode;
+      outputFormat.value = prefs.outputFormat;
       outputName.value = prefs.outputName;
       dateOrder.value = prefs.dateOrder;
+      applyRoleAndFormatRules();
+      if (isLegacyOutputName(outputName.value) || !isGeneratedDateOutputName(outputName.value, outputFormat.value)) {
+        setOutputNameDefault(outputFormat.value);
+      }
+      prefs.outputFormat = outputFormat.value;
+      prefs.outputName = normalizeOutputName(outputName.value, outputFormat.value);
+      outputName.value = prefs.outputName;
+      savePrefs();
       renderRecent();
       renderSummary();
     }
@@ -460,9 +563,9 @@ const html = `<!doctype html>
       recentListEl.innerHTML = prefs.recentRuns
         .map((item) =>
           '<div class="recent-item">' +
-          '<strong>' + escapeHtml(item.outputName || 'processedData.generated.xlsx') + '</strong>' +
+          '<strong>' + escapeHtml(item.outputName || defaultOutputName(item.outputFormat === 'xlsx' ? 'xlsx' : 'priorsart')) + '</strong>' +
           '<span>' + escapeHtml(summarizeFiles(item.files || [])) + '</span>' +
-          '<span>' + escapeHtml((item.files || []).length + ' file(s) · ' + (item.dateOrder || 'YMD') + ' · ' + (item.rows || item.stamp || '')) + '</span>' +
+          '<span>' + escapeHtml((item.outputFormat || 'priorsart') + ' · ' + (item.files || []).length + ' file(s) · ' + (item.dateOrder || 'YMD') + ' · ' + (item.rows || item.stamp || '')) + '</span>' +
           '</div>'
         )
         .join('');
@@ -471,13 +574,13 @@ const html = `<!doctype html>
     function renderSummary() {
       if (!runSummaryEl) return;
       if (!prefs.lastRun) {
-        runSummaryEl.innerHTML = '<strong>No completed export yet</strong><span class="meta">The latest workbook summary will appear here after the first successful run.</span>';
+        runSummaryEl.innerHTML = '<strong>No completed run yet</strong><span class="meta">The latest output summary will appear here after the first successful run.</span>';
         return;
       }
 
       runSummaryEl.innerHTML =
-        '<strong>' + escapeHtml(prefs.lastRun.outputName || 'processedData1.generated.xlsx') + '</strong>' +
-        '<span class="meta">' + escapeHtml((prefs.lastRun.files || []).length + ' file(s) · ' + (prefs.lastRun.dateOrder || 'YMD') + (prefs.lastRun.rows ? ' · ' + prefs.lastRun.rows : '')) + '</span>' +
+        '<strong>' + escapeHtml(prefs.lastRun.outputName || defaultOutputName((prefs.lastRun.outputFormat || 'priorsart') === 'xlsx' ? 'xlsx' : 'priorsart')) + '</strong>' +
+        '<span class="meta">' + escapeHtml((prefs.lastRun.outputFormat || 'priorsart') + ' · ' + (prefs.lastRun.files || []).length + ' file(s) · ' + (prefs.lastRun.dateOrder || 'YMD') + (prefs.lastRun.rows ? ' · ' + prefs.lastRun.rows : '')) + '</span>' +
         '<span class="meta">' + escapeHtml(summarizeFiles(prefs.lastRun.files || [])) + '</span>';
     }
 
@@ -558,7 +661,14 @@ const html = `<!doctype html>
       const response = await fetch('/api/jobs', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ files, outputName: outputName.value.trim(), dateOrder: dateOrder.value }),
+        body: JSON.stringify({
+          files,
+          outputName: outputName.value.trim(),
+          dateOrder: dateOrder.value,
+          outputFormat: outputFormat.value,
+          roleMode: roleMode.value,
+          adminKey: adminKey.value,
+        }),
       });
 
       if (!response.ok) {
@@ -579,9 +689,11 @@ const html = `<!doctype html>
             downloadEl.href = '/api/jobs/' + jobId + '/download';
             downloadEl.style.display = 'inline-flex';
             goBtn.disabled = false;
-            setProgress(100, 'Done', 'Workbook is ready to download.');
+            setProgress(100, 'Done', 'Output is ready to download.');
             addRecentRun({
-              signature: selectedFiles.map((file) => file.webkitRelativePath || file.relativePath || file.name).join('|') + '|' + outputName.value.trim() + '|' + dateOrder.value,
+              signature: selectedFiles.map((file) => file.webkitRelativePath || file.relativePath || file.name).join('|') + '|' + outputName.value.trim() + '|' + outputFormat.value + '|' + dateOrder.value,
+              roleMode: roleMode.value,
+              outputFormat: outputFormat.value,
               outputName: outputName.value.trim(),
               dateOrder: dateOrder.value,
               files: selectedFiles.map((file) => file.webkitRelativePath || file.relativePath || file.name),
@@ -659,7 +771,22 @@ const html = `<!doctype html>
       renderFiles();
     });
     outputName.addEventListener('input', () => {
-      prefs.outputName = outputName.value.trim() || 'processedData1.generated.xlsx';
+      prefs.outputName = normalizeOutputName(outputName.value, outputFormat.value);
+      outputName.value = prefs.outputName;
+      savePrefs();
+    });
+    roleMode.addEventListener('change', () => {
+      prefs.roleMode = roleMode.value;
+      applyRoleAndFormatRules();
+      prefs.outputFormat = outputFormat.value;
+      prefs.outputName = normalizeOutputName(outputName.value, outputFormat.value);
+      outputName.value = prefs.outputName;
+      savePrefs();
+    });
+    outputFormat.addEventListener('change', () => {
+      applyRoleAndFormatRules();
+      prefs.outputFormat = outputFormat.value;
+      setOutputNameDefault(outputFormat.value);
       savePrefs();
     });
     dateOrder.addEventListener('change', () => {
@@ -694,7 +821,7 @@ function updateJob(jobId: string, patch: Partial<JobState>): void {
   jobs.set(jobId, { ...current, ...patch });
 }
 
-async function runJob(jobId: string, body: { files: UploadFile[]; outputName: string; dateOrder: string }): Promise<void> {
+async function runJob(jobId: string, body: { files: UploadFile[]; outputName: string; dateOrder: string; outputFormat: OutputFormat }): Promise<void> {
   const tempDir = await ensureJobDir(jobId);
   updateJob(jobId, { status: "running", progress: 5, stage: "Writing uploaded files", tempDir });
 
@@ -709,35 +836,57 @@ async function runJob(jobId: string, body: { files: UploadFile[]; outputName: st
 
   const manifestName = writtenNames.find((name) => name.toLowerCase() === "xml-input.manifest.json") ?? writtenNames.find((name) => name.toLowerCase().endsWith(".json"));
   const manifestPath = manifestName ? path.join(tempDir, manifestName) : undefined;
-  const outputName = body.outputName.trim() || "processedData.generated.xlsx";
-  const outputFile = path.join(tempDir, outputName.endsWith(".xlsx") ? outputName : `${outputName}.xlsx`);
+  const outputName = normalizeOutputName(body.outputName, body.outputFormat);
+  const outputFile = path.join(tempDir, outputName);
   const sourcePath = tempDir;
 
   try {
-    const result = await exportFlattenedXlsx({
-      from: "xml",
+    if (body.outputFormat === "xlsx") {
+      const result = await exportFlattenedXlsx({
+        from: "xml",
+        inputFile: sourcePath,
+        outputFile,
+        datePolicy: { defaultDateOrder: normalizeDateOrder(body.dateOrder) },
+        ...(manifestPath ? { xmlConfigFile: manifestPath } : {}),
+        onProgress: (update: ExportProgressUpdate) => {
+          const patch: Partial<JobState> = {
+            progress: update.progress,
+            stage: update.stage,
+          };
+          if (update.detail !== undefined) {
+            patch.detail = update.detail;
+          }
+          updateJob(jobId, patch);
+        },
+      });
+
+      updateJob(jobId, {
+        status: "done",
+        progress: 100,
+        stage: "Done",
+        detail: `${result.rowCount} rows`,
+        outputFile: result.outputFile,
+      });
+      return;
+    }
+
+    updateJob(jobId, { progress: 30, stage: "Reading XML canonical data" });
+    const pkg = await generateFromXml({
       inputFile: sourcePath,
       outputFile,
-      datePolicy: { defaultDateOrder: (body.dateOrder === "MDY" || body.dateOrder === "DMY" || body.dateOrder === "YMD" ? body.dateOrder : "YMD") as any },
+      datePolicy: { defaultDateOrder: normalizeDateOrder(body.dateOrder) },
       ...(manifestPath ? { xmlConfigFile: manifestPath } : {}),
-      onProgress: (update: ExportProgressUpdate) => {
-        const patch: Partial<JobState> = {
-          progress: update.progress,
-          stage: update.stage,
-        };
-        if (update.detail !== undefined) {
-          patch.detail = update.detail;
-        }
-        updateJob(jobId, patch);
-      },
     });
+
+    const counts = pkg.manifest.counts;
+    const totalRows = counts.salesOrders + counts.assemblies + counts.demands + counts.supplies + counts.operations + counts.peggingLinks + counts.partCatalog;
 
     updateJob(jobId, {
       status: "done",
       progress: 100,
       stage: "Done",
-      detail: `${result.rowCount} rows`,
-      outputFile: result.outputFile,
+      detail: `${totalRows} records`,
+      outputFile,
     });
   } catch (error) {
     updateJob(jobId, {
@@ -747,6 +896,46 @@ async function runJob(jobId: string, body: { files: UploadFile[]; outputName: st
       error: error instanceof Error ? error.message : String(error),
     });
   }
+}
+
+function normalizeDateOrder(value: string): "MDY" | "DMY" | "YMD" {
+  if (value === "MDY" || value === "DMY" || value === "YMD") {
+    return value;
+  }
+  return "YMD";
+}
+
+function normalizeOutputFormat(value: string | undefined): OutputFormat {
+  return value === "xlsx" ? "xlsx" : "priorsart";
+}
+
+function currentDateStamp(): string {
+  const now = new Date();
+  const dd = String(now.getDate()).padStart(2, "0");
+  const mmm = ["JAN", "FEB", "MAR", "APR", "MAY", "JUN", "JUL", "AUG", "SEP", "OCT", "NOV", "DEC"][now.getMonth()] ?? "JAN";
+  const yyyy = String(now.getFullYear());
+  return `${dd}${mmm}${yyyy}`;
+}
+
+function normalizeOutputName(rawOutputName: string | undefined, format: OutputFormat): string {
+  const fallback = format === "xlsx" ? `generated${currentDateStamp()}.xlsx` : `generated${currentDateStamp()}.priorsart`;
+  const ext = format === "xlsx" ? ".xlsx" : ".priorsart";
+  const raw = (rawOutputName ?? "").trim();
+  const cleaned = raw ? raw.replace(/\.(xlsx|priorsart)$/i, "") : fallback.replace(/\.(xlsx|priorsart)$/i, "");
+  return `${cleaned}${ext}`;
+}
+
+function resolveOutputContentType(filePath: string): string {
+  const ext = path.extname(filePath).toLowerCase();
+  if (ext === ".xlsx") {
+    return "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet";
+  }
+  return "application/octet-stream";
+}
+
+function hasAdminRights(roleMode: RoleMode, adminKey: string | undefined): boolean {
+  void adminKey;
+  return roleMode === "admin";
 }
 
 function resolveUploadPath(relativePath: string | undefined, fallbackName: string): string {
@@ -788,7 +977,7 @@ const server = http.createServer(async (req, res) => {
     try {
       const buffer = await fs.readFile(job.outputFile);
       res.writeHead(200, {
-        "Content-Type": "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+        "Content-Type": resolveOutputContentType(job.outputFile),
         "Content-Disposition": `attachment; filename="${path.basename(job.outputFile)}"`,
         "Content-Length": buffer.length,
       });
@@ -833,9 +1022,27 @@ const server = http.createServer(async (req, res) => {
 
     req.on("end", async () => {
       try {
-        const body = JSON.parse(Buffer.concat(chunks).toString("utf8")) as { files?: UploadFile[]; outputName?: string; dateOrder?: string };
+        const body = JSON.parse(Buffer.concat(chunks).toString("utf8")) as {
+          files?: UploadFile[];
+          outputName?: string;
+          dateOrder?: string;
+          outputFormat?: string;
+          roleMode?: string;
+          adminKey?: string;
+        };
         if (!Array.isArray(body.files) || body.files.length === 0) {
           throw new Error("At least one XML file is required.");
+        }
+
+        const roleMode: RoleMode = body.roleMode === "admin" ? "admin" : "user";
+        const outputFormat = normalizeOutputFormat(body.outputFormat);
+        if (outputFormat === "xlsx") {
+          if (!XLSX_EXPORT_ENABLED) {
+            throw new Error("XLSX export is disabled in this environment.");
+          }
+          if (!hasAdminRights(roleMode, body.adminKey)) {
+            throw new Error("Admin rights are required for .xlsx output.");
+          }
         }
 
         const jobId = crypto.randomUUID();
@@ -844,12 +1051,14 @@ const server = http.createServer(async (req, res) => {
           status: "queued",
           progress: 0,
           stage: "Queued",
+          outputFormat,
         });
 
         void runJob(jobId, {
           files: body.files,
-          outputName: body.outputName ?? "processedData.generated.xlsx",
+          outputName: body.outputName ?? "processedData.generated.priorsart",
           dateOrder: body.dateOrder ?? "YMD",
+          outputFormat,
         });
 
         res.writeHead(200, { "Content-Type": "application/json; charset=utf-8" });

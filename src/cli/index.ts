@@ -7,6 +7,15 @@ import { exportFlattenedXlsx } from "../pipeline/exportXlsx";
 import { DateOrder } from "../model/types";
 
 const program = new Command();
+const XLSX_EXPORT_ENABLED = process.env.PRIORSART_ALLOW_XLSX_EXPORT === "1";
+
+function assertXlsxExportEnabled(): void {
+  if (!XLSX_EXPORT_ENABLED) {
+    throw new Error(
+      "XLSX export is disabled in this environment. Set PRIORSART_ALLOW_XLSX_EXPORT=1 for admin workflows."
+    );
+  }
+}
 
 program
   .name("priorsart-generator")
@@ -68,6 +77,8 @@ program
   .option("--defaultDateOrder <order>", "Date order policy (MDY, DMY, YMD)", "YMD")
   .option("--xmlConfig <file>", "XML source manifest JSON path (for --from xml)")
   .action(async (opts) => {
+    assertXlsxExportEnabled();
+
     const from = String(opts.from).toLowerCase();
     if (!["xml", "priorsart"].includes(from)) {
       throw new Error(`Unsupported --from '${opts.from}'. Valid values are 'xml' and 'priorsart'.`);

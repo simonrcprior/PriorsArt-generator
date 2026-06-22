@@ -69,6 +69,11 @@ function asNumber(value: unknown): number | undefined {
   return undefined;
 }
 
+function asNullableString(value: unknown): string | null {
+  const parsed = asOptionalString(value);
+  return parsed ?? null;
+}
+
 function validateRequiredFields(
   required: Record<string, string | number | undefined>,
   diagnostics: DiagnosticCollector,
@@ -257,7 +262,32 @@ export function readXlsxCanonical(
       continue;
     }
 
-    peggingLinks.push({ id: id!, demandId: demandId!, supplyId: supplyId!, quantity: quantity! });
+    const nest = asNumber(row.nest);
+    const resolvedNest = nest !== undefined && Number.isInteger(nest) && nest >= 1 ? nest : 1;
+    const pathCell = asOptionalString(row.path);
+    const parsedPath = pathCell
+      ? pathCell
+          .split(/[|,>]/)
+          .map((entry) => entry.trim())
+          .filter((entry) => entry.length > 0)
+      : [];
+    const path = parsedPath.length > 0 ? parsedPath : [id!];
+    const duplicateReason = asOptionalString(row.duplicateReason);
+
+    peggingLinks.push({
+      id: id!,
+      demandId: demandId!,
+      supplyId: supplyId!,
+      quantity: quantity!,
+      nest: resolvedNest,
+      nestText: asOptionalString(row.nestText) ?? ">".repeat(resolvedNest),
+      parentLinkId: asNullableString(row.parentLinkId),
+      parentDemandId: asNullableString(row.parentDemandId),
+      parentSupplyId: asNullableString(row.parentSupplyId),
+      path,
+      duplicate: Boolean(row.duplicate),
+      ...(duplicateReason ? { duplicateReason } : {}),
+    });
   }
 
   for (const [index, row] of readRows(workbook, "partCatalog").entries()) {
