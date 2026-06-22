@@ -39,79 +39,76 @@ const html = `<!doctype html>
   <title>PriorsArt Generator</title>
   <style>
     :root {
-      --bg: #09111f;
-      --panel: rgba(13, 20, 33, 0.82);
-      --panel-2: rgba(255, 255, 255, 0.04);
-      --text: #edf2ff;
-      --muted: #99a6bf;
-      --accent: #66e3b4;
-      --accent-2: #58a6ff;
-      --danger: #ff7a90;
-      --border: rgba(255,255,255,0.12);
-      --shadow: 0 24px 80px rgba(0, 0, 0, 0.35);
+      --bg: #e6e8ee;
+      --panel: #ffffff;
+      --panel-soft: #f4f6fb;
+      --text: #0f1f36;
+      --muted: #5f708c;
+      --accent: #2b73db;
+      --accent-2: #1e5cb4;
+      --danger: #cc3f4c;
+      --border: #d5ddea;
+      --shadow: 0 12px 30px rgba(15, 33, 64, 0.09);
     }
     * { box-sizing: border-box; }
     body {
       margin: 0;
       min-height: 100vh;
-      font-family: "Segoe UI", system-ui, sans-serif;
+      font-family: "Segoe UI", Tahoma, sans-serif;
       color: var(--text);
       background:
-        radial-gradient(circle at top left, rgba(88,166,255,0.18), transparent 30%),
-        radial-gradient(circle at top right, rgba(102,227,180,0.13), transparent 25%),
-        linear-gradient(180deg, #07101b 0%, #0b1627 48%, #09111f 100%);
+        radial-gradient(circle at 10% -10%, #ffffff 0%, rgba(255, 255, 255, 0) 45%),
+        linear-gradient(180deg, #eceef4 0%, #e2e6ef 100%);
     }
     .wrap {
-      max-width: 1180px;
+      max-width: 1240px;
       margin: 0 auto;
-      padding: 40px 20px 32px;
+      padding: 18px;
     }
-    .hero {
-      display: grid;
-      gap: 16px;
-      margin-bottom: 20px;
-      animation: rise 500ms ease-out both;
+    .shell {
+      background: #f7f8fb;
+      border: 1px solid #cfd7e4;
+      border-radius: 12px;
+      box-shadow: var(--shadow);
+      padding: 12px;
     }
-    .eyebrow {
-      text-transform: uppercase;
-      letter-spacing: 0.2em;
-      color: var(--accent);
-      font-size: 12px;
-      font-weight: 700;
+    .viewer-head {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      gap: 12px;
+      padding: 4px 8px 12px;
+      animation: rise 280ms ease-out both;
     }
-    h1 {
-      margin: 0;
-      font-size: clamp(34px, 5vw, 62px);
-      line-height: 0.95;
-      font-weight: 800;
+    .brand {
+      display: flex;
+      align-items: center;
+      gap: 10px;
     }
-    .lede {
-      margin: 0;
-      max-width: 760px;
-      color: var(--muted);
-      font-size: 16px;
-      line-height: 1.6;
+    .brand img {
+      height: 34px;
+      width: auto;
+      display: block;
     }
     .grid {
       display: grid;
-      grid-template-columns: 1.2fr 0.8fr;
-      gap: 18px;
-      align-items: start;
+      grid-template-columns: 1.3fr 0.7fr;
+      gap: 16px;
+      align-items: stretch;
     }
     .card {
       background: var(--panel);
       border: 1px solid var(--border);
-      border-radius: 22px;
-      padding: 20px;
-      box-shadow: var(--shadow);
-      backdrop-filter: blur(16px);
+      border-radius: 10px;
+      padding: 18px;
+      box-shadow: 0 2px 8px rgba(20, 40, 80, 0.04);
     }
     .dropzone {
-      border: 1.5px dashed rgba(255,255,255,0.22);
-      background: linear-gradient(180deg, rgba(255,255,255,0.04), rgba(255,255,255,0.02));
-      border-radius: 20px;
-      padding: 26px;
-      min-height: 260px;
+      border: 1.5px dashed #aac0e0;
+      background: linear-gradient(180deg, #fafcff 0%, #f4f8ff 100%);
+      border-radius: 8px;
+      padding: 20px;
+      min-height: 380px;
       display: grid;
       place-items: center;
       text-align: center;
@@ -119,19 +116,34 @@ const html = `<!doctype html>
     }
     .dropzone.dragover {
       border-color: var(--accent);
-      background: linear-gradient(180deg, rgba(102,227,180,0.12), rgba(88,166,255,0.08));
-      transform: translateY(-2px);
+      background: linear-gradient(180deg, #edf5ff 0%, #e4f1ff 100%);
+      transform: translateY(-1px);
     }
     .drop-title {
-      font-size: 22px;
+      font-size: 21px;
       font-weight: 700;
-      margin: 12px 0 8px;
+      margin: 8px 0;
     }
-    .drop-copy { color: var(--muted); margin: 0; line-height: 1.5; }
-    .files {
-      margin-top: 18px;
-      display: grid;
+    .drop-copy { color: var(--muted); margin: 0; line-height: 1.5; font-size: 13px; }
+    .drop-copy code {
+      background: #eaf0fc;
+      border: 1px solid #d2ddf2;
+      padding: 1px 4px;
+      border-radius: 4px;
+      font-size: 12px;
+      color: #173159;
+    }
+    .file-actions {
+      margin-top: 16px;
+      display: flex;
+      justify-content: center;
       gap: 10px;
+      flex-wrap: wrap;
+    }
+    .files {
+      margin-top: 16px;
+      display: grid;
+      gap: 8px;
       width: 100%;
       text-align: left;
     }
@@ -140,36 +152,37 @@ const html = `<!doctype html>
       justify-content: space-between;
       gap: 12px;
       align-items: center;
-      padding: 10px 12px;
-      border-radius: 14px;
-      background: rgba(255,255,255,0.05);
-      border: 1px solid rgba(255,255,255,0.08);
+      padding: 10px;
+      border-radius: 8px;
+      background: var(--panel-soft);
+      border: 1px solid #d8e0ee;
       color: var(--text);
     }
     .file-row span { color: var(--muted); font-size: 12px; }
     .side {
-      display: grid;
-      gap: 18px;
-    }
-    .stack {
-      display: grid;
-      gap: 18px;
+      display: flex;
+      flex-direction: column;
+      gap: 16px;
+      height: 100%;
     }
     .card-title {
       display: flex;
       align-items: center;
       justify-content: space-between;
       gap: 12px;
-      margin-bottom: 14px;
+      margin-bottom: 12px;
+      min-height: 30px;
     }
     .card-title h2 {
       margin: 0;
-      font-size: 18px;
+      font-size: 17px;
       letter-spacing: 0.01em;
+      line-height: 1.2;
     }
     .card-title .subtle {
       color: var(--muted);
       font-size: 12px;
+      line-height: 1.2;
     }
     label {
       display: grid;
@@ -180,33 +193,62 @@ const html = `<!doctype html>
     }
     select, input[type="text"] {
       width: 100%;
-      border-radius: 14px;
-      border: 1px solid rgba(255,255,255,0.12);
-      background: rgba(255,255,255,0.05);
+      border-radius: 8px;
+      border: 1px solid #cdd7ea;
+      background: #fff;
       color: var(--text);
-      padding: 12px 14px;
+      padding: 11px 12px;
       outline: none;
+    }
+    select:focus, input[type="text"]:focus {
+      border-color: #6da0e8;
+      box-shadow: 0 0 0 3px rgba(49, 116, 214, 0.12);
     }
     .btn {
       width: 100%;
       border: 0;
-      border-radius: 14px;
-      padding: 14px 16px;
-      font-weight: 800;
-      color: #08111f;
-      background: linear-gradient(135deg, var(--accent), #d8ffb9);
+      border-radius: 999px;
+      padding: 10px 18px;
+      font-weight: 700;
+      color: #fff;
+      background: #2563eb;
       cursor: pointer;
       transition: transform 160ms ease, opacity 160ms ease;
     }
     .btn:hover { transform: translateY(-1px); }
     .btn:disabled { opacity: 0.55; cursor: not-allowed; transform: none; }
-    .progress-wrap { display: grid; gap: 10px; }
-    .progress-bar {
-      height: 14px;
+    .btn-secondary {
+      border: none;
       border-radius: 999px;
-      background: rgba(255,255,255,0.08);
+      padding: 10px 18px;
+      font-weight: 700;
+      background: #2563eb;
+      color: #fff;
+      cursor: pointer;
+    }
+    .btn-secondary:hover {
+      background: #1e4fc4;
+    }
+    .btn-secondary:disabled {
+      opacity: 0.5;
+      cursor: not-allowed;
+    }
+    .progress-wrap {
+      display: grid;
+      gap: 12px;
+      flex: 1 1 auto;
+      align-content: start;
+    }
+    .progress-wrap .download {
+      margin-top: auto;
+      align-self: start;
+    }
+    .progress-bar {
+      height: 12px;
+      border-radius: 999px;
+      background: #e8eff9;
       overflow: hidden;
-      border: 1px solid rgba(255,255,255,0.09);
+      border: 1px solid #cfdbef;
     }
     .progress-bar > div {
       width: 0%;
@@ -223,6 +265,24 @@ const html = `<!doctype html>
       font-size: 13px;
     }
     .status strong { color: var(--text); }
+    .run-summary {
+      display: grid;
+      gap: 3px;
+      padding: 10px;
+      border-radius: 8px;
+      border: 1px solid #d9e2f0;
+      background: #f8fbff;
+      color: var(--muted);
+      font-size: 12px;
+      line-height: 1.4;
+    }
+    .run-summary strong {
+      color: #193761;
+      font-size: 13px;
+    }
+    .run-summary .meta {
+      color: var(--muted);
+    }
     .message {
       min-height: 20px;
       color: var(--muted);
@@ -235,40 +295,13 @@ const html = `<!doctype html>
       align-items: center;
       justify-content: center;
       min-height: 44px;
-      padding: 0 16px;
-      border-radius: 14px;
-      background: rgba(88,166,255,0.16);
-      border: 1px solid rgba(88,166,255,0.25);
-      color: var(--text);
+      padding: 0 18px;
+      border-radius: 999px;
+      background: #f2f4f8;
+      border: none;
+      color: #1a3766;
       text-decoration: none;
       font-weight: 700;
-    }
-    .recent-list {
-      display: grid;
-      gap: 10px;
-    }
-    .recent-item {
-      padding: 12px 14px;
-      border-radius: 14px;
-      background: rgba(255,255,255,0.05);
-      border: 1px solid rgba(255,255,255,0.08);
-      display: grid;
-      gap: 4px;
-    }
-    .recent-item strong {
-      font-size: 13px;
-      line-height: 1.35;
-    }
-    .recent-item span {
-      color: var(--muted);
-      font-size: 12px;
-      line-height: 1.4;
-    }
-    .empty-state {
-      color: var(--muted);
-      font-size: 13px;
-      line-height: 1.5;
-      padding: 8px 0 2px;
     }
     @keyframes rise {
       from { opacity: 0; transform: translateY(14px); }
@@ -276,75 +309,79 @@ const html = `<!doctype html>
     }
     @media (max-width: 900px) {
       .grid { grid-template-columns: 1fr; }
+      .side { height: auto; }
+      .viewer-head {
+        flex-direction: column;
+        align-items: flex-start;
+      }
     }
   </style>
 </head>
 <body>
   <div class="wrap">
-    <section class="hero">
-      <div class="eyebrow">PriorsArt Generator</div>
-      <h1>Drop XML, press Go, watch it build.</h1>
-      <p class="lede">Drag the XML source files and optional manifest into the drop zone, then generate a workbook with a live progress bar and download link. This uses the same export engine as the CLI.</p>
-    </section>
+    <div class="shell">
+      <header class="viewer-head">
+        <div class="brand">
+          <img src="/PriorsArt1.png" alt="PriorsArt" />
+        </div>
+      </header>
 
-    <div class="grid">
-      <div class="card">
-        <div id="dropzone" class="dropzone">
-          <div>
-            <div class="eyebrow">Input</div>
-            <div class="drop-title">Drag & drop XML files here</div>
-            <p class="drop-copy">Drop the XML files from the source folder, or pick a folder/file set with the buttons below. Include <code>xml-input.manifest.json</code> if you want explicit file mapping, otherwise the default names will be used.</p>
-            <input id="fileInput" type="file" accept=".xml,.json" multiple style="display:none" />
-            <input id="folderInput" type="file" accept=".xml,.json" multiple webkitdirectory style="display:none" />
-            <div class="file-actions">
-              <button id="pickFilesBtn" type="button" class="btn-secondary">Pick files</button>
-              <button id="pickFolderBtn" type="button" class="btn-secondary">Pick folder</button>
+      <div class="grid">
+        <div class="card" id="inputCard">
+          <div id="dropzone" class="dropzone">
+            <div>
+              <div class="drop-title">Drag and drop XML files here</div>
+              <p class="drop-copy">Drop the XML files from the source folder, or pick a folder/file set with the buttons below.</p>
+              <input id="fileInput" type="file" accept=".xml,.json" multiple style="display:none" />
+              <input id="folderInput" type="file" accept=".xml,.json" multiple webkitdirectory style="display:none" />
+              <div class="file-actions">
+                <button id="pickFilesBtn" type="button" class="btn-secondary">Choose files</button>
+                <button id="pickFolderBtn" type="button" class="btn-secondary">Choose folder</button>
+              </div>
+              <div id="files" class="files"></div>
             </div>
-            <div id="files" class="files"></div>
           </div>
         </div>
-      </div>
 
-      <div class="side">
-        <div class="card">
-          <div class="card-title">
-            <h2>Build settings</h2>
-            <div class="subtle">Saved locally</div>
+        <div class="side" id="rightColumn">
+          <div class="card" id="buildSettingsCard">
+            <div class="card-title">
+              <h2>Build settings</h2>
+              <div class="subtle">Saved locally</div>
+            </div>
+            <label>
+              Role
+              <select id="roleMode">
+                <option value="user" selected>User</option>
+                <option value="admin">Admin</option>
+              </select>
+            </label>
+            <label id="adminKeyWrap" style="display:none">
+              Admin access key
+              <input id="adminKey" type="password" placeholder="Enter admin key" autocomplete="off" />
+            </label>
+            <label id="outputFormatWrap" style="display:none">
+              Output format
+              <select id="outputFormat">
+                <option value="priorsart" selected>Contract compliant .priorsart</option>
+                <option value="xlsx">Flattened .xlsx (admin only)</option>
+              </select>
+            </label>
+            <label>
+              Output file name
+              <input id="outputName" type="text" value="" />
+            </label>
+            <label>
+              Date order
+              <select id="dateOrder">
+                <option value="YMD" selected>YMD</option>
+                <option value="MDY">MDY</option>
+                <option value="DMY">DMY</option>
+              </select>
+            </label>
+            <button id="goBtn" class="btn">Generate</button>
           </div>
-          <label>
-            Role
-            <select id="roleMode">
-              <option value="user" selected>User</option>
-              <option value="admin">Admin</option>
-            </select>
-          </label>
-          <label id="adminKeyWrap" style="display:none">
-            Admin access key
-            <input id="adminKey" type="password" placeholder="Enter admin key" autocomplete="off" />
-          </label>
-          <label id="outputFormatWrap" style="display:none">
-            Output format
-            <select id="outputFormat">
-              <option value="priorsart" selected>Contract compliant .priorsart</option>
-              <option value="xlsx">Flattened .xlsx (admin only)</option>
-            </select>
-          </label>
-          <label>
-            Output file name
-            <input id="outputName" type="text" value="" />
-          </label>
-          <label>
-            Date order
-            <select id="dateOrder">
-              <option value="YMD" selected>YMD</option>
-              <option value="MDY">MDY</option>
-              <option value="DMY">DMY</option>
-            </select>
-          </label>
-          <button id="goBtn" class="btn">Go</button>
-        </div>
 
-        <div class="stack">
           <div class="card progress-wrap">
             <div class="card-title">
               <h2>Progress</h2>
@@ -355,17 +392,6 @@ const html = `<!doctype html>
             <div class="progress-bar"><div id="bar"></div></div>
             <div id="message" class="message">Ready when you are.</div>
             <a id="download" class="download" href="#" style="display:none" download>Download output</a>
-          </div>
-
-          <div class="card">
-            <div class="card-title">
-              <h2>Recent inputs</h2>
-              <div class="subtle">Last used in this browser</div>
-            </div>
-            <div class="recent-actions">
-              <button id="clearRecentBtn" type="button" class="btn-secondary">Clear recent</button>
-            </div>
-            <div id="recentList" class="recent-list"></div>
           </div>
         </div>
       </div>
@@ -389,19 +415,20 @@ const html = `<!doctype html>
     const outputFormat = document.getElementById('outputFormat');
     const outputName = document.getElementById('outputName');
     const dateOrder = document.getElementById('dateOrder');
+    const rightColumn = document.getElementById('rightColumn');
+    const inputCard = document.getElementById('inputCard');
+    const buildSettingsCard = document.getElementById('buildSettingsCard');
     const stageEl = document.getElementById('stage');
     const percentEl = document.getElementById('percent');
     const barEl = document.getElementById('bar');
     const messageEl = document.getElementById('message');
     const downloadEl = document.getElementById('download');
-    const recentListEl = document.getElementById('recentList');
     const progressHintEl = document.getElementById('progressHint');
     const runSummaryEl = document.getElementById('runSummary');
-    const clearRecentBtn = document.getElementById('clearRecentBtn');
 
     let selectedFiles = [];
     let pollTimer = null;
-    let prefs = { roleMode: 'user', outputFormat: 'priorsart', outputName: '', dateOrder: 'YMD', recentRuns: [], lastRun: null };
+    let prefs = { roleMode: 'user', outputFormat: 'priorsart', outputName: '', dateOrder: 'YMD', lastRun: null };
 
     function currentDateStamp() {
       const now = new Date();
@@ -456,6 +483,34 @@ const html = `<!doctype html>
 
       adminKeyWrap.style.display = 'none';
       outputName.value = normalizeOutputName(outputName.value, outputFormat.value);
+      syncDropzoneHeight();
+    }
+
+    function syncDropzoneHeight() {
+      const baseline = 380;
+      if (!dropzone || !buildSettingsCard) {
+        return;
+      }
+      if (window.matchMedia('(max-width: 900px)').matches) {
+        const settingsHeight = buildSettingsCard.getBoundingClientRect().height;
+        const mobileTarget = Math.max(baseline, Math.ceil(settingsHeight));
+        dropzone.style.minHeight = mobileTarget + 'px';
+        return;
+      }
+
+      if (!rightColumn || !inputCard) {
+        const settingsHeight = buildSettingsCard.getBoundingClientRect().height;
+        const fallbackTarget = Math.max(baseline, Math.ceil(settingsHeight));
+        dropzone.style.minHeight = fallbackTarget + 'px';
+        return;
+      }
+
+      const rightHeight = Math.ceil(rightColumn.getBoundingClientRect().height);
+      const cardStyles = window.getComputedStyle(inputCard);
+      const cardVerticalPadding =
+        Number.parseFloat(cardStyles.paddingTop || '0') + Number.parseFloat(cardStyles.paddingBottom || '0');
+      const target = Math.max(baseline, Math.ceil(rightHeight - cardVerticalPadding));
+      dropzone.style.minHeight = target + 'px';
     }
 
     function normalizeRun(value) {
@@ -497,7 +552,6 @@ const html = `<!doctype html>
               outputFormat: parsedOutputFormat,
               outputName: typeof parsed.outputName === 'string' && parsed.outputName.trim() ? parsed.outputName : defaultOutputName(parsedOutputFormat),
               dateOrder: ['YMD', 'MDY', 'DMY'].includes(parsed.dateOrder) ? parsed.dateOrder : prefs.dateOrder,
-              recentRuns: Array.isArray(parsed.recentRuns) ? parsed.recentRuns.slice(0, 5) : [],
               lastRun: normalizeRun(parsed.lastRun),
             };
           }
@@ -517,7 +571,6 @@ const html = `<!doctype html>
       prefs.outputName = normalizeOutputName(outputName.value, outputFormat.value);
       outputName.value = prefs.outputName;
       savePrefs();
-      renderRecent();
       renderSummary();
     }
 
@@ -536,39 +589,8 @@ const html = `<!doctype html>
         stamp,
       };
       prefs.lastRun = normalized;
-      prefs.recentRuns = [normalized, ...prefs.recentRuns.filter((item) => item.signature !== entry.signature)].slice(0, 5);
       savePrefs();
-      renderRecent();
       renderSummary();
-    }
-
-    function clearRecentHistory() {
-      prefs.recentRuns = [];
-      prefs.lastRun = null;
-      savePrefs();
-      renderRecent();
-      renderSummary();
-    }
-
-    function renderRecent() {
-      if (!recentListEl) return;
-      if (!prefs.recentRuns.length) {
-        recentListEl.innerHTML = '<div class="empty-state">No recent runs yet. Your last output name and file list will appear here after the first export.</div>';
-        if (clearRecentBtn) clearRecentBtn.disabled = !prefs.lastRun;
-        return;
-      }
-
-      if (clearRecentBtn) clearRecentBtn.disabled = false;
-
-      recentListEl.innerHTML = prefs.recentRuns
-        .map((item) =>
-          '<div class="recent-item">' +
-          '<strong>' + escapeHtml(item.outputName || defaultOutputName(item.outputFormat === 'xlsx' ? 'xlsx' : 'priorsart')) + '</strong>' +
-          '<span>' + escapeHtml(summarizeFiles(item.files || [])) + '</span>' +
-          '<span>' + escapeHtml((item.outputFormat || 'priorsart') + ' · ' + (item.files || []).length + ' file(s) · ' + (item.dateOrder || 'YMD') + ' · ' + (item.rows || item.stamp || '')) + '</span>' +
-          '</div>'
-        )
-        .join('');
     }
 
     function renderSummary() {
@@ -754,10 +776,12 @@ const html = `<!doctype html>
     fileInput.addEventListener('change', () => {
       selectedFiles = Array.from(fileInput.files || []);
       renderFiles();
+      syncDropzoneHeight();
     });
     folderInput.addEventListener('change', () => {
       selectedFiles = Array.from(folderInput.files || []);
       renderFiles();
+      syncDropzoneHeight();
     });
     dropzone.addEventListener('dragover', (event) => {
       event.preventDefault();
@@ -792,9 +816,7 @@ const html = `<!doctype html>
     dateOrder.addEventListener('change', () => {
       prefs.dateOrder = dateOrder.value;
       savePrefs();
-    });
-    clearRecentBtn.addEventListener('click', () => {
-      clearRecentHistory();
+      syncDropzoneHeight();
     });
     goBtn.addEventListener('click', () => {
       startJob().catch((error) => {
@@ -805,6 +827,8 @@ const html = `<!doctype html>
 
     loadPrefs();
     renderFiles();
+    syncDropzoneHeight();
+    window.addEventListener('resize', syncDropzoneHeight);
   </script>
 </body>
 </html>`;
@@ -957,6 +981,19 @@ const server = http.createServer(async (req, res) => {
   if (req.method === "GET" && url.pathname === "/") {
     res.writeHead(200, { "Content-Type": "text/html; charset=utf-8" });
     res.end(html);
+    return;
+  }
+
+  if (req.method === "GET" && url.pathname === "/PriorsArt1.png") {
+    try {
+      const logoPath = path.resolve(process.cwd(), "PriorsArt1.png");
+      const buffer = await fs.readFile(logoPath);
+      res.writeHead(200, { "Content-Type": "image/png", "Cache-Control": "public, max-age=3600" });
+      res.end(buffer);
+    } catch {
+      res.writeHead(404, { "Content-Type": "text/plain; charset=utf-8" });
+      res.end("Logo not found");
+    }
     return;
   }
 
