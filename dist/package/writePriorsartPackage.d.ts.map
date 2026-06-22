@@ -1,0 +1,1 @@
+{"version":3,"file":"writePriorsartPackage.d.ts","sourceRoot":"","sources":["../../src/package/writePriorsartPackage.ts"],"names":[],"mappings":"AAGA,OAAO,EAAE,gBAAgB,EAAE,MAAM,gBAAgB,CAAC;AAClD,OAAO,EAAE,kBAAkB,EAAE,MAAM,8BAA8B,CAAC;AAElE,wBAAsB,qBAAqB,CACzC,UAAU,EAAE,MAAM,EAClB,GAAG,EAAE,gBAAgB,EACrB,gBAAgB,CAAC,EAAE,kBAAkB,EAAE,GACtC,OAAO,CAAC,IAAI,CAAC,CA4Bf"}

@@ -1,6 +1,7 @@
 import path from "node:path";
 import { readXlsxCanonical } from "../adapters/xlsx/readXlsxCanonical";
 import { readXmlCanonical } from "../adapters/xml/readXmlCanonical";
+import { buildRowsFromXmlSource, ProcessedLayoutRow } from "../export/writeFlattenedXlsx";
 import { DiagnosticCollector } from "../diagnostics/collector";
 import {
   CanonicalDatasets,
@@ -48,7 +49,8 @@ async function finalizePackage(
   datasets: CanonicalDatasets,
   source: SourceMetadata,
   options: GenerateOptions,
-  diagnostics: DiagnosticCollector
+  diagnostics: DiagnosticCollector,
+  flattenedPegging?: ProcessedLayoutRow[]
 ): Promise<CanonicalPackage> {
   validateCanonical(datasets, diagnostics);
 
@@ -77,7 +79,7 @@ async function finalizePackage(
     quality,
   };
 
-  await writePriorsartPackage(options.outputFile, pkg);
+  await writePriorsartPackage(options.outputFile, pkg, flattenedPegging);
   return pkg;
 }
 
@@ -99,12 +101,15 @@ export async function generateFromXlsx(options: GenerateOptions): Promise<Canoni
 
 export async function generateFromXml(options: GenerateOptions): Promise<CanonicalPackage> {
   const diagnostics = new DiagnosticCollector();
-  const { datasets, fileNames } = await readXmlCanonical(
+  const { datasets, fileNames, sourceTables } = await readXmlCanonical(
     options.inputFile,
     options.datePolicy,
     diagnostics,
     options.xmlConfigFile
   );
+
+  // Compute flattened pegging view for viewer optimization
+  const flattenedPegging = buildRowsFromXmlSource(sourceTables);
 
   return finalizePackage(
     datasets,
@@ -115,6 +120,7 @@ export async function generateFromXml(options: GenerateOptions): Promise<Canonic
       ...(options.xmlConfigFile ? { configFile: options.xmlConfigFile } : {}),
     },
     options,
-    diagnostics
+    diagnostics,
+    flattenedPegging
   );
 }

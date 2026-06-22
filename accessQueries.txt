@@ -1,0 +1,286 @@
+qryPeggingPlus2:
+SELECT
+    qryPeggingPlus2sub2.LineID,
+    qryPeggingPlus2sub2.Company,
+    qryPeggingPlus2sub2.topPNum,
+    qryPeggingPlus2sub2.topOrderNum,
+    qryPeggingPlus2sub2.topLine,
+    qryPeggingPlus2sub2.topRel,
+    qryPeggingPlus2sub2.topQty,
+    qryPeggingPlus2sub2.topDate,
+    qryPeggingPlus2sub2.nest,
+    qryPeggingPlus2sub2.nestText,
+    qryPeggingPlus2sub2.thisPNum,
+    qryTimePhaseLead.FirstOfDesc AS thisDesc,
+    qryPeggingPlus2sub2.ThisOrderNum,
+    qryPeggingPlus2sub2.ThisLine,
+    qryPeggingPlus2sub2.ThisRel,
+    qryPeggingPlus2sub2.ThisQty,
+    qryPeggingPlus2sub2.thisPeggedQty,
+    qryPeggingPlus2sub2.thisDate,
+    qryPeggingPlus2sub2.thisType,
+    qryPeggingPlus2sub2.DemandSeq,
+    qryPeggingPlus2sub2.SupplySeq,
+    qryPeggingPlus2sub2.dmdDate,
+    qryPeggingPlus2sub2.rowsSince1,
+    qryPeggingPlus2sub2.duplicate,
+    qryPeggingPlus2sub2.PORel_PromiseDt,
+    qryPeggingPlus2sub2.JobHead_CommitDate_c,
+    qryPeggingPlus2sub2.earliestN,
+    qryPeggingPlus2sub2.RemainingOps,
+    qryPeggingPlus2sub2.RemainingOpsh,
+    qryPeggingPlus2sub2.MinDue,
+    qryPeggingPlus2sub2.Warning,
+    qryPeggingPlus2sub2.myText1,
+    qryPeggingPlus2sub2.myText2,
+    qryPeggingPlus2sub2.myText3,
+    qryPeggingPlus2sub2.myText4,
+    qryPeggingPlus2sub2.myText5,
+    qryPeggingPlus2sub2.LeadFromTimePhase,
+    qryPeggingSO.willShip,
+    qryPeggingSO.willShipText,
+    [thisdate] + Int([FirstOfLead] * -7 / 5) -7 AS OrderBy
+FROM
+    (
+        qryPeggingPlus2sub2
+        LEFT JOIN qryTimePhaseLead ON qryPeggingPlus2sub2.thisPNum = qryTimePhaseLead.Pnum
+    )
+    LEFT JOIN qryPeggingSO ON (qryPeggingPlus2sub2.topRel = qryPeggingSO.Rel)
+    AND (qryPeggingPlus2sub2.topLine = qryPeggingSO.Line)
+    AND (
+        qryPeggingPlus2sub2.topOrderNum = qryPeggingSO.OrderNum
+    )
+ORDER BY
+    qryPeggingPlus2sub2.LineID;
+
+
+
+qryPeggingPlus2Sub:
+SELECT
+    tblPegging.LineID,
+    tblPegging.Company,
+    tblPegging.topPNum,
+    tblPegging.topOrderNum,
+    tblPegging.topLine,
+    tblPegging.topRel,
+    tblPegging.topQty,
+    tblPegging.topDate,
+    tblPegging.nest,
+    tblPegging.nestText,
+    tblPegging.thisPNum,
+    tblPegging.ThisOrderNum,
+    tblPegging.ThisLine,
+    tblPegging.ThisRel,
+    tblPegging.ThisQty,
+    tblPegging.thisPeggedQty,
+    tblPegging.thisDate,
+    tblPegging.thisType,
+    tblPegging.DemandSeq,
+    tblPegging.SupplySeq,
+    tblPegging.dmdDate,
+    tblPegging.rowsSince1,
+    tblPegging.duplicate,
+    PEGPODETAIL.PORel_PromiseDt,
+    qryPegJobInfoCommit.JobHead_CommitDate_c,
+    myRemainingOps ([Company], [ThisOrderNum]) AS RemainingOps,
+    myRemainingOpsh ([Company], [ThisOrderNum]) AS RemainingOpsh,
+    myRemainingOpsMinDue ([Company], [ThisOrderNum]) AS MinDue,
+    myWarning (
+        Nz ([topDate], 0),
+        Nz ([thisDate], 0),
+        Nz ([PORel_PromiseDt], 0),
+        Nz ([JobHead_CommitDate_c], 0),
+        Nz ([minDue], 0),
+        Nz (DMax ("[MaxOfThisDate]", "qryPeggingMaxW"), 0)
+    ) AS Warning,
+    qryTimePhaseLead.FirstOfLead AS LeadFromTimePhase,
+    PEGPODETAIL.Vendor_Name
+FROM
+    (
+        (
+            tblPegging
+            LEFT JOIN PEGPODETAIL ON (tblPegging.ThisRel = PEGPODETAIL.PORel_PORelNum)
+            AND (tblPegging.ThisLine = PEGPODETAIL.PORel_POLine)
+            AND (tblPegging.ThisOrderNum = PEGPODETAIL.PORel_PONum)
+            AND (tblPegging.Company = PEGPODETAIL.PORel_Company)
+        )
+        LEFT JOIN qryPegJobInfoCommit ON tblPegging.ThisOrderNum = qryPegJobInfoCommit.JobHead_JobNum
+    )
+    LEFT JOIN qryTimePhaseLead ON tblPegging.thisPNum = qryTimePhaseLead.Pnum
+ORDER BY
+    tblPegging.LineID;
+
+
+qryPeggingPlus2sub2:
+SELECT
+    qryPeggingPlus2Sub.*,
+    IIf(
+        [thisType] = "N",
+        [MaxOfPegSupMst_SupplyDate] - Int(-7 / 5 * [LeadFromTimePhase]),
+        NULL
+    ) AS earliestN,
+    qryPeggingSUPMSTmaxW.MaxOfPegSupMst_SupplyDate,
+    mytext1 ([thisType], [warning]) AS myText1,
+    [thistype] & " /" & [thisordernum] & " /" & [thisline] & " /" & [thisRel] & " /" & [thisPeggedqty] & " /" & [thisQty] & " / Due:" & Format([thisdate], "dd-mmm-yyyy") & Left(
+        " / Promise:",
+        (NOT (IsNull([PORel_PromiseDt]))) * -20
+    ) & Format([PORel_PromiseDt], "dd-mmm-yyyy") & Left(
+        " / Commit:",
+        (NOT (IsNull([JobHead_CommitDate_c]))) * -20
+    ) & Format([JobHead_CommitDate_c], "dd-mmm-yyyy") & Left(
+        " / EarliestN:",
+        (NOT (IsNull([earliestN]))) * -20
+    ) & Format([earliestN], "dd-mmm-yyyy") AS myText2,
+    [myText2] & Left(
+        Chr$ (10) & [Vendor_Name],
+        (NOT (IsNull([Vendor_Name]))) * -1 * (1 + Len(Nz ([Vendor_Name])))
+    ) & Left(
+        Chr$ (10) & [remainingops],
+        (
+            (NOT (IsNull([remainingops])))
+            AND Left([thisordernum], 3) <> "UNF"
+        ) * -1 * (1 + Len(Nz ([remainingops])))
+    ) AS myText3,
+    [myText2] & Left(
+        Chr$ (10) & [Vendor_Name],
+        (NOT (IsNull([Vendor_Name]))) * -1 * (1 + Len(Nz ([Vendor_Name])))
+    ) & Left(
+        Chr$ (10) & [remainingops],
+        (NOT (IsNull([remainingops]))) * -1 * (1 + Len(Nz ([remainingops])))
+    ) AS myText4,
+    [myText2] & Left(
+        Chr$ (10) & [Vendor_Name],
+        (NOT (IsNull([Vendor_Name]))) * -1 * (1 + Len(Nz ([Vendor_Name])))
+    ) & Left(
+        Chr$ (10) & [remainingopsh],
+        (NOT (IsNull([remainingopsh]))) * -1 * (1 + Len(Nz ([remainingopsh])))
+    ) AS myText5,
+    [thisDate] - [LeadFromTimePhase] AS OrderBy
+FROM
+    qryPeggingPlus2Sub,
+    qryPeggingSUPMSTmaxW;
+
+
+
+qryPeggingSUPMSTmaxW:
+SELECT
+    TOP 1 Count(PEGSUPMST.PegSupMst_SupplyDate) AS countof,
+    PEGSUPMST.PegSupMst_ReportDate AS MaxOfPegSupMst_SupplyDate
+FROM
+    PEGSUPMST
+GROUP BY
+    PEGSUPMST.PegSupMst_ReportDate,
+    PEGSUPMST.PegSupMst_SupplyType
+HAVING
+    (((PEGSUPMST.PegSupMst_SupplyType) = "W"))
+ORDER BY
+    Count(PEGSUPMST.PegSupMst_SupplyDate) DESC;
+
+
+
+qryLink1:
+SELECT
+    PEGDMDMST.PegDmdMst_Company,
+    PEGDMDMST.PegDmdMst_DemandType,
+    PEGDMDMST.PegDmdMst_DemandSeq,
+    PEGDMDMST.PegDmdMst_PartNum,
+    PEGDMDMST.PegDmdMst_DemandDate,
+    PEGDMDMST.PegDmdMst_DemandQty,
+    PEGDMDMST.PegDmdMst_DemandOrdNum,
+    PEGDMDMST.PegDmdMst_DemandOrdLine,
+    PEGDMDMST.PegDmdMst_DemandOrdRel,
+    PEGSUPMST.PegSupMst_PartNum,
+    PEGSUPMST.PegSupMst_SupplyOrdNum,
+    PEGSUPMST.PegSupMst_SupplyOrdLine,
+    PEGSUPMST.PegSupMst_SupplyOrdRel,
+    PEGSUPMST.PegSupMst_SupplyDate,
+    PEGSUPMST.PegSupMst_SupplyQty,
+    PEGSUPMST.PegSupMst_SupplyType,
+    PEGLINK.PegLink_SupplySeq,
+    PEGLINK.PegLink_DemandSeq,
+    PEGLINK.PegLink_PeggedQty
+FROM
+    (
+        PEGDMDMST
+        INNER JOIN PEGLINK ON (
+            PEGDMDMST.PegDmdMst_DemandSeq = PEGLINK.PegLink_DemandSeq
+        )
+        AND (
+            PEGDMDMST.PegDmdMst_Company = PEGLINK.PegLink_Company
+        )
+    )
+    INNER JOIN PEGSUPMST ON (
+        PEGLINK.PegLink_SupplySeq = PEGSUPMST.PegSupMst_SupplySeq
+    )
+    AND (
+        PEGLINK.PegLink_Company = PEGSUPMST.PegSupMst_Company
+    );
+
+
+qryPegJobInfoCommit:
+SELECT
+    PEGJOBINFO.JobHead_JobNum,
+    PEGJOBINFO.JobHead_CommitDate_c
+FROM
+    PEGJOBINFO
+GROUP BY
+    PEGJOBINFO.JobHead_JobNum,
+    PEGJOBINFO.JobHead_CommitDate_c;
+
+
+
+qryTimePhaseLead:
+SELECT
+    tblTimePhase.Pnum,
+    First (tblTimePhase.Desc) AS FirstOfDesc,
+    First (tblTimePhase.Lead) AS FirstOfLead
+FROM
+    tblTimePhase
+GROUP BY
+    tblTimePhase.Pnum
+HAVING
+    ((NOT (First (tblTimePhase.Lead)) IS NULL));
+
+
+qryPeggingSO:
+SELECT
+    qryPeggingPlus2sub2.topPNum AS PartNum,
+    qryPeggingPlus2sub2.topOrderNum AS OrderNum,
+    qryPeggingPlus2sub2.topLine AS Line,
+    qryPeggingPlus2sub2.topRel AS Rel,
+    qryPeggingPlus2sub2.topQty AS qty,
+    qryPeggingPlus2sub2.topDate AS due,
+    Max(qryPeggingPlus2sub2.PORel_PromiseDt) AS MaxOfPORel_PromiseDt,
+    Max(qryPeggingPlus2sub2.JobHead_CommitDate_c) AS MaxOfJobHead_CommitDate_c,
+    Max(qryPeggingPlus2sub2.earliestN) AS MaxOfearliestN,
+    "Latest of due, PO promise, WO commit, earliestN or maxW" AS willShipText,
+    myMaxdate (
+        Nz (Max([PORel_PromiseDt]), 0),
+        Nz (Max([JobHead_CommitDate_c]), 0),
+        Nz (Max([MaxOfPegSupMst_SupplyDate]), 0),
+        Nz (Max([topdate]), 0),
+        Nz (Max([earliestN]), 0)
+    ) AS willShip,
+    qryPeggingPlus2sub2.MaxOfPegSupMst_SupplyDate
+FROM
+    qryPeggingPlus2sub2
+GROUP BY
+    qryPeggingPlus2sub2.topPNum,
+    qryPeggingPlus2sub2.topOrderNum,
+    qryPeggingPlus2sub2.topLine,
+    qryPeggingPlus2sub2.topRel,
+    qryPeggingPlus2sub2.topQty,
+    qryPeggingPlus2sub2.topDate,
+    "Latest of due, PO promise, WO commit, earliestN or maxW",
+    qryPeggingPlus2sub2.MaxOfPegSupMst_SupplyDate;
+
+
+
+qryPeggingMaxW:
+SELECT
+    Max(tblPegging.thisDate) AS MaxOfthisDate
+FROM
+    tblPegging
+WHERE
+    (((tblPegging.thisType) = "W"));
+

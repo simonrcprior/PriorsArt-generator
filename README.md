@@ -185,6 +185,7 @@ Generated `.priorsart` files are ZIP archives containing:
 - `datasets/operations.json`
 - `datasets/peggingLinks.json`
 - `datasets/partCatalog.json`
+- `datasets/flattenedPegging.json` (XML source only; optional optimization for viewer)
 
 Schema notes:
 - New packages are written as `schemaVersion: "3"`.
@@ -197,6 +198,11 @@ Schema notes:
 	- `path`
 	- `duplicate`
 	- `duplicateReason`
+- `datasets/flattenedPegging.json` (XML source only):
+	- Pre-computed flattened BOM view (22,453 rows for the current 6-file XML dataset)
+	- Includes all computed display fields: `myText1-5`, `willShip`, `earliestN`, `OrderBy`, etc.
+	- Viewer can read directly for fast rendering, or reconstruct from canonical `peggingLinks` if absent
+	- Only generated when source is XML; not included for XLSX sources
 
 ### Tests
 

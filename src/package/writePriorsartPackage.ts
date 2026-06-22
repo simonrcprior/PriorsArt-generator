@@ -2,8 +2,13 @@ import fs from "node:fs/promises";
 import path from "node:path";
 import JSZip from "jszip";
 import { CanonicalPackage } from "../model/types";
+import { ProcessedLayoutRow } from "../export/writeFlattenedXlsx";
 
-export async function writePriorsartPackage(outputFile: string, pkg: CanonicalPackage): Promise<void> {
+export async function writePriorsartPackage(
+  outputFile: string,
+  pkg: CanonicalPackage,
+  flattenedPegging?: ProcessedLayoutRow[]
+): Promise<void> {
   const zip = new JSZip();
 
   zip.file("manifest.json", JSON.stringify(pkg.manifest, null, 2));
@@ -22,6 +27,10 @@ export async function writePriorsartPackage(outputFile: string, pkg: CanonicalPa
   datasetFolder.file("operations.json", JSON.stringify(pkg.datasets.operations, null, 2));
   datasetFolder.file("peggingLinks.json", JSON.stringify(pkg.datasets.peggingLinks, null, 2));
   datasetFolder.file("partCatalog.json", JSON.stringify(pkg.datasets.partCatalog, null, 2));
+
+  if (flattenedPegging && flattenedPegging.length > 0) {
+    datasetFolder.file("flattenedPegging.json", JSON.stringify(flattenedPegging, null, 2));
+  }
 
   const buffer = await zip.generateAsync({ type: "nodebuffer", compression: "DEFLATE" });
 

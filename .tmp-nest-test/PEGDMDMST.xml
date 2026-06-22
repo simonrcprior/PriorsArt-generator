@@ -1,0 +1,22 @@
+<Root>
+  <Results>
+    <PegDmdMst_DemandSeq>1</PegDmdMst_DemandSeq>
+    <PegDmdMst_PartNum>TOP</PegDmdMst_PartNum>
+    <PegDmdMst_DemandQty>10</PegDmdMst_DemandQty>
+    <PegDmdMst_DemandDate>2026-01-10</PegDmdMst_DemandDate>
+    <PegDmdMst_DemandOrdNum>SO100</PegDmdMst_DemandOrdNum>
+    <PegDmdMst_DemandOrdLine>1</PegDmdMst_DemandOrdLine>
+    <PegDmdMst_DemandOrdRel>1</PegDmdMst_DemandOrdRel>
+    <PegDmdMst_DemandType>S</PegDmdMst_DemandType>
+  </Results>
+  <Results>
+    <PegDmdMst_DemandSeq>20</PegDmdMst_DemandSeq>
+    <PegDmdMst_PartNum>CHILD</PegDmdMst_PartNum>
+    <PegDmdMst_DemandQty>5</PegDmdMst_DemandQty>
+    <PegDmdMst_DemandDate>2026-01-08</PegDmdMst_DemandDate>
+    <PegDmdMst_DemandOrdNum>JOB200</PegDmdMst_DemandOrdNum>
+    <PegDmdMst_DemandOrdLine>1</PegDmdMst_DemandOrdLine>
+    <PegDmdMst_DemandOrdRel>1</PegDmdMst_DemandOrdRel>
+    <PegDmdMst_DemandType>J</PegDmdMst_DemandType>
+  </Results>
+</Root>
