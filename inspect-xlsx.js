@@ -1,0 +1,20 @@
+const XLSX = require('xlsx');
+const wb = XLSX.readFile('./test-export.xlsx');
+const sheet = wb.Sheets[wb.SheetNames[0]];
+const data = XLSX.utils.sheet_to_json(sheet);
+console.log('First 2 rows (key fields):');
+data.slice(0, 2).forEach((row, i) => {
+  console.log('\n--- Row ' + (i+1) + ' ---');
+  console.log('Company: ' + row.Company);
+  console.log('topOrderNum: ' + row.topOrderNum);
+  console.log('topLine: ' + row.topLine);
+  console.log('topRel: ' + row.topRel);
+  console.log('thisOrderNum: ' + row.thisOrderNum);
+  console.log('thisLine: ' + row.thisLine);
+  console.log('thisRel: ' + row.thisRel);
+  console.log('myNestedBOM: ' + row.myNestedBOM);
+  console.log('nest: ' + row.nest);
+  console.log('rowsSince1: ' + row.rowsSince1);
+  console.log('topPNum: ' + row.topPNum);
+  console.log('thisPNum: ' + row.thisPNum);
+});

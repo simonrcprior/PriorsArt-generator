@@ -1,0 +1,16 @@
+<Root>
+  <Results>
+    <PegLink_PegNum>100</PegLink_PegNum>
+    <PegLink_DemandSeq>1</PegLink_DemandSeq>
+    <PegLink_SupplySeq>10</PegLink_SupplySeq>
+    <PegLink_PartNum>CHILD</PegLink_PartNum>
+    <PegLink_PeggedQty>10</PegLink_PeggedQty>
+  </Results>
+  <Results>
+    <PegLink_PegNum>200</PegLink_PegNum>
+    <PegLink_DemandSeq>20</PegLink_DemandSeq>
+    <PegLink_SupplySeq>30</PegLink_SupplySeq>
+    <PegLink_PartNum>RAW</PegLink_PartNum>
+    <PegLink_PeggedQty>5</PegLink_PeggedQty>
+  </Results>
+</Root>

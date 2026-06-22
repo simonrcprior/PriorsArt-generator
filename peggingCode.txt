@@ -1,0 +1,373 @@
+
+Function pegging(all As Boolean, days As Double, Optional noOutput As Boolean, Optional noUnf As Boolean) As Long
+
+    'this creates excel output to list requirements pegged to sales orders
+    
+    Dim db As DAO.Database
+    Set db = CurrentDb()
+    Dim qtemp As DAO.QueryDef
+    Dim rtemp As DAO.Recordset
+    Dim sql As String
+    Dim total As Long
+    Dim x As Boolean
+
+    'empty table
+    db.Execute ("DELETE * FROM tblPegging")
+    
+    'get the list of sales orders
+    
+    If all = True Then
+        sql = "SELECT * FROM PegDmdMst WHERE (PegDmdMst_DemandType = 'S'"
+    Else
+        sql = "SELECT * FROM qryPegDmdMstCollection WHERE (PegDmdMst_DemandType = 'S'"
+    End If
+    
+    If (IsNumeric(days) And days > 0) Then
+        sql = sql & " AND PegDmdMst_DemandDate<(#" & Format(Now() + days, "dd-mmm-yyyy") & "#)"
+    End If
+    
+    sql = sql & ");"
+    'MsgBox (sql)
+    Set qtemp = db.CreateQueryDef("", sql)
+    Set rtemp = qtemp.OpenRecordset(DB_OPEN_SNAPSHOT)
+
+     While Not rtemp.EOF
+        'add this to pegging table
+        'we know sales orders have order numbers, so use addDemand
+        total = total + addDemand(rtemp!PegDmdMst_Company, rtemp!PegDmdMst_PartNum, CDbl(rtemp!PegDmdMst_DemandQty), _
+        rtemp!PegDmdMst_DemandOrdNum, rtemp!PegDmdMst_DemandOrdLine, rtemp!PegDmdMst_DemandOrdRel, Nz(rtemp!PegDmdMst_DemandDate), _
+        rtemp!PegDmdMst_DemandSeq, 1, 0, rtemp!PegDmdMst_Company, noUnf)
+        
+        rtemp.MoveNext
+    Wend
+      
+    'clean up
+    qtemp.Close
+    rtemp.Close
+    db.Close
+    Set qtemp = Nothing
+    Set rtemp = Nothing
+    Set db = Nothing
+    
+    'MsgBox (total)
+    pegging = total
+    
+    'output the file
+    'may exceed row count of excel 5.0
+    'x = Outputf11("qryPegging", "qryPegging", "qryPegging", 2)
+    If Not noOutput Then x = Outputf11("qryPeggingPlus2", "qryPeggingPlus2", "qryPeggingPlus2", 2)
+
+End Function
+
+Function addDemand(Company As String, topPnum As String, topQty As Double, topSO As String, topLine As String, topRel As String, topDate As Date _
+                    , myDemandSeq As Double, nesting As Integer, rowsSince1 As Long, myPrevNestedBOM As String, noUnf As Boolean) As Double
+    
+    Dim db As DAO.Database
+    Set db = CurrentDb()
+    Dim qtemp As DAO.QueryDef
+    Dim rtemp As DAO.Recordset
+    Dim sql As String
+    Dim a As Long
+    Dim NT As String
+    Dim total As Double
+    Dim q2temp As DAO.QueryDef
+    Dim r2temp As DAO.Recordset
+    
+    'check for recursive nesting
+    If nesting > 50 Then
+        MsgBox ("Warning - nesting at depth " & nesting)
+    End If
+    
+    'get the peglink items with this demand
+    sql = "SELECT * FROM qryLink1 WHERE ("
+    sql = sql & "(PegLink_DemandSeq =" & myDemandSeq & ")"
+    sql = sql & " AND (PegDmdMst_Company=""" & Company & """)"
+    sql = sql & ");"
+    Set qtemp = db.CreateQueryDef("", sql)
+    Set rtemp = qtemp.OpenRecordset(DB_OPEN_SNAPSHOT)
+    'MsgBox (sql)
+    Set q2temp = db.CreateQueryDef("", sql)
+    Set r2temp = q2temp.OpenRecordset(DB_OPEN_SNAPSHOT)
+    
+    'create indentation text
+    NT = ""
+    For a = 1 To nesting
+        NT = NT + ">"
+    Next a
+    
+    If nesting = 1 Then rowsSince1 = 0
+    
+    'check if this is a duplicate of the BOM line, where multiple supply satisfies same demand
+    Dim prevCompany As String
+    Dim prevThisPNum As String
+    Dim prevNest
+    Dim duplicate As Boolean
+     
+    'add this
+    While Not rtemp.EOF
+        
+        total = total + 1
+        rowsSince1 = rowsSince1 + 1
+    
+        duplicate = (Company = prevCompany) * (rtemp!PegSupMST_PartNum = prevThisPNum) * (nesting = prevNest)
+        If duplicate = False Then
+            'at this time duplicate tells us if the preceeding row is the same, but there might be other bom lines the same already added, so check for this
+            sql = "SELECT LineID from tblPegging WHERE ((myNestedBOM =""" & myPrevNestedBOM & ">" & Replace(rtemp!PegSupMST_PartNum, """", """""") & """)"
+            sql = sql & " AND (topOrderNum=""" & topSO & """) AND (topLine=""" & topLine & """) AND (topRel=""" & topRel & """)"
+            sql = sql & ");"
+            Set q2temp = db.CreateQueryDef("", sql)
+            Set r2temp = q2temp.OpenRecordset(DB_OPEN_SNAPSHOT)
+            If Not (r2temp.EOF) Then duplicate = True
+        End If
+        
+        sql = "INSERT INTO tblPegging"
+        sql = sql & " (Company, topPNum, topOrderNum, topLine, topRel, topQty, topDate, nest, nestText,"
+        sql = sql & " thisPNum, thisOrderNum, thisLine, thisRel, thisQty, thisPeggedQty, thisDate, thisType"
+        sql = sql & ", dmdDate"
+        sql = sql & ", DemandSeq, SupplySeq, rowsSince1, duplicate, myNestedBOM) "
+        
+        sql = sql & " VALUES (""" & Company & """,""" & topPnum & """,""" & topSO & """,""" & topLine & """,""" & topRel & """," & topQty
+        sql = sql & ",#" & Format(topDate, "dd-mmm-yyyy") & "#," & nesting & ",""" & NT & ""","""
+        sql = sql & Replace(rtemp!PegSupMST_PartNum, """", """""") & ""","""
+        sql = sql & rtemp!PegSupMst_SupplyOrdNum & ""","""
+        sql = sql & rtemp!PegSupMst_SupplyOrdLine & ""","""
+        sql = sql & rtemp!PegSupMst_SupplyOrdRel & ""","
+        sql = sql & rtemp!PegSupMst_SupplyQty & ","
+        sql = sql & rtemp!PegLink_PeggedQty & ",#"
+        
+        sql = sql & Format(rtemp!PegSupMst_SupplyDate, "dd-mmm-yyyy") & "#,"""
+        sql = sql & rtemp!PegSupMst_SupplyType & """,#"
+        sql = sql & Format(Nz(rtemp!PegDmdMst_DemandDate, 0), "dd-mmm-yyyy") & "#,"""
+
+        
+        
+        sql = sql & rtemp!PegLink_DemandSeq & ""","""
+        sql = sql & rtemp!PegLink_SupplySeq & """"
+        sql = sql & "," & rowsSince1
+        sql = sql & "," & duplicate
+        
+        sql = sql & ",""" & myPrevNestedBOM & ">" & Replace(rtemp!PegSupMST_PartNum, """", """""") & """"
+        
+        sql = sql & ");"
+        
+        'MsgBox (sql)
+        db.Execute (sql)
+        
+  
+        ' add childs of this.....
+        'the supply table surprisingly doesn't have a demand link in it, so get demand for this order and line
+        'skip if no order number
+        'changedFeb 1 2024.... optional screen u orders
+        If noUnf Then
+            If Not (IsNull(rtemp!PegSupMst_SupplyOrdNum) Or (rtemp!PegSupMst_SupplyOrdNum Like "U*") Or (rtemp!PegDmdMst_DemandOrdNum Like "U*") Or (rtemp!PegSupMst_SupplyOrdNum = "") Or (rtemp!PegDmdMst_DemandOrdNum = rtemp!PegSupMst_SupplyOrdNum)) Then
+                total = total + getDemand(Company, topPnum, topQty, topSO, topLine, topRel, topDate, _
+                rtemp!PegSupMst_SupplyOrdNum, rtemp!PegSupMst_SupplyOrdLine, nesting + 1, rowsSince1, myPrevNestedBOM & ">" & Replace(rtemp!PegSupMST_PartNum, """", """"""), noUnf)
+            End If
+        Else
+            If Not (IsNull(rtemp!PegSupMst_SupplyOrdNum) Or (rtemp!PegSupMst_SupplyOrdNum = "") Or (rtemp!PegDmdMst_DemandOrdNum = rtemp!PegSupMst_SupplyOrdNum)) Then
+                total = total + getDemand(Company, topPnum, topQty, topSO, topLine, topRel, topDate, _
+                rtemp!PegSupMst_SupplyOrdNum, rtemp!PegSupMst_SupplyOrdLine, nesting + 1, rowsSince1, myPrevNestedBOM & ">" & Replace(rtemp!PegSupMST_PartNum, """", """"""), noUnf)
+            End If
+        End If
+                
+        prevCompany = Company
+        prevThisPNum = rtemp!PegSupMST_PartNum
+        prevNest = nesting
+        
+        
+        rtemp.MoveNext
+    Wend
+    
+  'clean up
+  qtemp.Close
+  rtemp.Close
+  q2temp.Close
+  r2temp.Close
+  db.Close
+  Set qtemp = Nothing
+  Set rtemp = Nothing
+  Set q2temp = Nothing
+  Set r2temp = Nothing
+  Set db = Nothing
+
+  addDemand = total
+
+End Function
+
+
+Function getDemand(Company As String, topPnum As String, topQty As Double, topSO As String, topLine As String, topRel As String, topDate As Date _
+                    , myOrderNum As String, myLine As String, nesting As Integer, rowsSince1 As Long, myPrevNestedBOM As String, noUnf As Boolean) As Double
+
+    Dim db As DAO.Database
+    Set db = CurrentDb()
+    Dim qtemp As DAO.QueryDef
+    Dim rtemp As DAO.Recordset
+    Dim sql As String
+    Dim total As Double
+    
+    'get the demandSequence from the demand table
+    'ignore blank order numbers
+    sql = "SELECT * FROM PEGDMDMST WHERE ("
+    sql = sql & "PegDmdMst_DemandOrdNum =""" & myOrderNum & """"
+    sql = sql & " AND PegDmdMst_Company =""" & Company & """"
+    sql = sql & " AND PegDmdMst_DemandOrdNum <> """""
+    'sql = sql & " AND PegDmdMst_DemandOrdLine =" & myLine & " AND PegDmdMst_DemandOrdLine <>null"
+    sql = sql & ");"
+    Set qtemp = db.CreateQueryDef("", sql)
+    Set rtemp = qtemp.OpenRecordset(DB_OPEN_SNAPSHOT)
+    
+    'modified 23 oct 2023 to ensure order number is not blank
+    While (Not rtemp.EOF)
+        If Not (IsNull(rtemp!PegDmdMst_DemandOrdNum) Or rtemp!PegDmdMst_DemandOrdNum = "") Then
+            'add this to pegging table
+            total = total + addDemand(Company, topPnum, topQty, topSO, topLine, topRel, topDate, rtemp!PegDmdMst_DemandSeq, nesting, rowsSince1, myPrevNestedBOM, noUnf)
+            total = total + 1
+            rtemp.MoveNext
+        End If
+    Wend
+    
+    rtemp.Close
+    qtemp.Close
+    db.Close
+    Set qtemp = Nothing
+    Set rtemp = Nothing
+    Set db = Nothing
+
+    getDemand = total
+
+End Function
+
+
+Function myRemainingOps(Company As String, JobNum As String) As String
+    Dim db As DAO.Database
+    Set db = CurrentDb()
+    Dim qtemp As DAO.QueryDef
+    Dim rtemp As DAO.Recordset
+    Dim sql As String
+
+    sql = "SELECT JobOper_OprSeq, JobOper_OpCode, JobOper_DueDate from PEGJOBINFO WHERE ("
+    sql = sql & "JobHead_Company = Left(""" & Company & """, Len(JobHead_Company)) & """""
+    sql = sql & " AND JobHead_JobNum =""" & JobNum & """"
+    sql = sql & " AND JobOper_OpComplete = FALSE"
+    sql = sql & ") "
+    sql = sql & "GROUP BY JobOper_OprSeq, JobOper_OpCode, JobOper_DueDate;"
+
+    Set qtemp = db.CreateQueryDef("", sql)
+    Set rtemp = qtemp.OpenRecordset(DB_OPEN_SNAPSHOT)
+    
+    While Not rtemp.EOF
+        If myRemainingOps <> "" Then myRemainingOps = myRemainingOps & Chr(10)
+        myRemainingOps = myRemainingOps & rtemp!JobOper_OprSeq & ">" & rtemp!JobOper_OpCode & " Due: " & rtemp!JobOper_DueDate
+        rtemp.MoveNext
+    Wend
+
+End Function
+
+Function myRemainingOpsh(Company As String, JobNum As String) As String
+    Dim db As DAO.Database
+    Set db = CurrentDb()
+    Dim qtemp As DAO.QueryDef
+    Dim rtemp As DAO.Recordset
+    Dim sql As String
+
+    sql = "SELECT JobOper_OprSeq, JobOper_OpCode, JobOper_DueDate, JobOper_EstSetHours, JobOper_EstProdHours from PEGJOBINFO WHERE ("
+    sql = sql & "JobHead_Company = Left(""" & Company & """, Len(JobHead_Company)) & """""
+    sql = sql & " AND JobHead_JobNum =""" & JobNum & """"
+    sql = sql & " AND JobOper_OpComplete = FALSE"
+    sql = sql & ") "
+    sql = sql & "GROUP BY JobOper_OprSeq, JobOper_OpCode, JobOper_DueDate, JobOper_EstSetHours, JobOper_EstProdHours;"
+    
+    Set qtemp = db.CreateQueryDef("", sql)
+    Set rtemp = qtemp.OpenRecordset(DB_OPEN_SNAPSHOT)
+    
+    While Not rtemp.EOF
+        If myRemainingOpsh <> "" Then myRemainingOpsh = myRemainingOpsh & Chr(10)
+        myRemainingOpsh = myRemainingOpsh & rtemp!JobOper_OprSeq & ">" & rtemp!JobOper_OpCode & " Due: " & rtemp!JobOper_DueDate & " SetH: " & rtemp!JobOper_EstSetHours & " RunH: " & rtemp!JobOper_EstProdHours
+        rtemp.MoveNext
+    Wend
+
+End Function
+
+
+Function myRemainingOpsMinDue(Company As String, JobNum As String) As Date
+    Dim db As DAO.Database
+    Set db = CurrentDb()
+    Dim qtemp As DAO.QueryDef
+    Dim rtemp As DAO.Recordset
+    Dim sql As String
+
+    sql = "SELECT * FROM PEGJOBINFO WHERE ("
+    sql = sql & "JobHead_Company = Left(""" & Company & """, Len(JobHead_Company)) & """""
+    sql = sql & " AND JobHead_JobNum =""" & JobNum & """"
+    sql = sql & " AND JobOper_OpComplete = FALSE"
+    sql = sql & ");"
+    Set qtemp = db.CreateQueryDef("", sql)
+    Set rtemp = qtemp.OpenRecordset(DB_OPEN_SNAPSHOT)
+    
+    While Not rtemp.EOF
+        If Nz(rtemp!JobOper_DueDate) > 0 And Nz(myRemainingOpsMinDue) = 0 Then myRemainingOpsMinDue = rtemp!JobOper_DueDate
+        If rtemp!JobOper_DueDate < myRemainingOpsMinDue Then myRemainingOpsMinDue = rtemp!JobOper_DueDate
+        rtemp.MoveNext
+    Wend
+    
+
+End Function
+
+Function myWarning(topDate As Date, dueDate As Date, promiseDate As Date, commitDate As Date, minDue As Date, thisDate As Date) As String
+
+    'topDate is the date of sales order
+    'due date is the due date for this
+    'thisDate is the date of the report
+    'promiseDate is the promise date for this
+    'minDue is the earliest due date for this
+    
+    'MsgBox ("STOP")
+    
+    Dim booleanWarning As Boolean
+    
+    'default to no warning
+    booleanWarning = False
+    
+    'is this due date later than top order
+    If ((minDue > 0) And (dueDate > topDate)) Then booleanWarning = True
+    
+    'is the promise date later than the top order
+    If ((minDue > 0) And (promiseDate > topDate)) Then booleanWarning = True
+    
+    'is the commit date later than the top order
+    If ((minDue > 0) And (commitDate > topDate)) Then booleanWarning = True
+    
+    'is the earliest due date very late (initially set to 28 days) to the report date
+    If ((minDue > 0) And ((minDue + 28) < thisDate)) Then booleanWarning = True
+    
+    'if there is a due date, then if the report date is after the top order this is late
+    If ((minDue > 0) And (thisDate > topDate)) Then booleanWarning = True
+    
+    'return as Y if warning
+    If booleanWarning Then myWarning = "Y"
+
+
+End Function
+
+Function myText1(thisType As String, myWarning As String) As String
+    
+    'this is verbosity 1 text content
+    'simple Green, Yellow, Amber
+    
+    'problem is... it may need several supply to satisfy this demand and we need to know all supply required to color code the total
+    'so if this returns a color code for each supply we will have to take the worst later
+    
+    myText1 = "Y"
+    If thisType = "W" Then myText1 = "G"
+    If myWarning = "Y" Then myText1 = "A"
+
+End Function
+
+
+Function myMaxDate(Optional from1 As Date, Optional from2 As Date, Optional from3 As Date, Optional from4 As Date, Optional from5 As Date, Optional from6 As Date) As Date
+
+    myMaxDate = Excel.WorksheetFunction.Max(from1, from2, from3, from4, from5, from6)
+
+End Function
+
+

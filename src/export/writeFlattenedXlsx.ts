@@ -34,7 +34,7 @@ function reportProgress(
   progress(update);
 }
 
-interface ProcessedLayoutRow {
+export interface ProcessedLayoutRow {
   LineID?: number;
   Company?: string;
   topPNum?: string;
@@ -523,7 +523,7 @@ function getMinDate(values: Array<number | null>): number | null {
   return Math.min(...filtered);
 }
 
-function buildRowsFromXmlSource(tables: XmlSourceTables, progress?: FlattenedXlsxProgressReporter): ProcessedLayoutRow[] {
+export function buildRowsFromXmlSource(tables: XmlSourceTables, progress?: FlattenedXlsxProgressReporter): ProcessedLayoutRow[] {
   reportProgress(progress, "Preparing XML workbook rows", 20);
 
   const demandRows = tables.rowsByFile.demands;

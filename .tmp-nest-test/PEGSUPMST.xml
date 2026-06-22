@@ -1,0 +1,22 @@
+<Root>
+  <Results>
+    <PegSupMst_SupplySeq>10</PegSupMst_SupplySeq>
+    <PegSupMst_PartNum>CHILD</PegSupMst_PartNum>
+    <PegSupMst_SupplyQty>10</PegSupMst_SupplyQty>
+    <PegSupMst_SupplyDate>2026-01-05</PegSupMst_SupplyDate>
+    <PegSupMst_SupplyType>J</PegSupMst_SupplyType>
+    <PegSupMst_SupplyOrdNum>JOB200</PegSupMst_SupplyOrdNum>
+    <PegSupMst_SupplyOrdLine>1</PegSupMst_SupplyOrdLine>
+    <PegSupMst_SupplyOrdRel>1</PegSupMst_SupplyOrdRel>
+  </Results>
+  <Results>
+    <PegSupMst_SupplySeq>30</PegSupMst_SupplySeq>
+    <PegSupMst_PartNum>RAW</PegSupMst_PartNum>
+    <PegSupMst_SupplyQty>5</PegSupMst_SupplyQty>
+    <PegSupMst_SupplyDate>2026-01-03</PegSupMst_SupplyDate>
+    <PegSupMst_SupplyType>P</PegSupMst_SupplyType>
+    <PegSupMst_SupplyOrdNum>PO300</PegSupMst_SupplyOrdNum>
+    <PegSupMst_SupplyOrdLine>1</PegSupMst_SupplyOrdLine>
+    <PegSupMst_SupplyOrdRel>1</PegSupMst_SupplyOrdRel>
+  </Results>
+</Root>
