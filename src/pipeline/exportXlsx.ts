@@ -30,6 +30,7 @@ export interface ExportXlsxResult {
     droppedRows: number;
     ambiguousDateCount: number;
     invalidDateCount: number;
+    nestLevelCounts?: Record<string, number>;
   };
   sourceSummary: string;
 }
@@ -41,30 +42,29 @@ export async function exportFlattenedXlsx(options: ExportXlsxOptions): Promise<E
 
   if (options.from === "xml") {
     const diagnostics = new DiagnosticCollector();
-    options.onProgress?.({ stage: "Loading XML source tables", progress: 20 });
-    const sourceTables = await readXmlSourceTables(options.inputFile, diagnostics, options.xmlConfigFile);
-    options.onProgress?.({ stage: "Reading XML canonical data", progress: 35 });
-    const { datasets, fileNames } = await readXmlCanonical(
-      options.inputFile,
-      options.datePolicy,
-      diagnostics,
-      options.xmlConfigFile
-    );
+    options.onProgress?.({ stage: "Reading XML source tables", progress: 35 });
+    const tables = await readXmlSourceTables(options.inputFile, diagnostics, options.xmlConfigFile);
+
+    options.onProgress?.({ stage: "Reading XML canonical data", progress: 45 });
+    const { datasets, fileNames } = await readXmlCanonical(options.inputFile, options.datePolicy, diagnostics, options.xmlConfigFile);
 
     options.onProgress?.({ stage: "Validating canonical data", progress: 55 });
     validateCanonical(datasets, diagnostics);
-    const rowCount = await writeFlattenedXlsxFromXmlSource(options.outputFile, sourceTables, datasets, options.onProgress);
+
+    options.onProgress?.({ stage: "Writing XLSX workbook", progress: 70 });
+    const result = await writeFlattenedXlsxFromXmlSource(options.outputFile, tables, options.onProgress);
 
     const quality = diagnostics.toQualityReport();
     return {
-      outputFile: options.outputFile,
-      rowCount,
+      outputFile: result.outputFile,
+      rowCount: result.rowCount,
       qualitySummary: {
         warnings: quality.warnings.length,
         errors: quality.errors.length,
         droppedRows: quality.droppedRows,
         ambiguousDateCount: quality.ambiguousDateCount,
         invalidDateCount: quality.invalidDateCount,
+        nestLevelCounts: quality.nestLevelCounts,
       },
       sourceSummary: `xml:${fileNames.join(",")}`,
     };

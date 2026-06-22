@@ -23,6 +23,8 @@ export interface Assembly {
 
 export interface Demand {
   id: string;
+  company?: string;
+  plant?: string;
   partNumber: string;
   quantity: number;
   dueDate: string;
@@ -32,12 +34,20 @@ export interface Demand {
 
 export interface Supply {
   id: string;
+  company?: string;
+  plant?: string;
   partNumber: string;
   quantity: number;
   availableDate: string;
   supplyType: "PO" | "WO" | "ON_HAND";
   reportDate?: string;
   sourceId?: string;
+  promiseDate?: string;
+  commitDate?: string;
+  minDue?: string;
+  remainingOps?: string;
+  remainingOpsh?: string;
+  vendorName?: string;
 }
 
 export interface Operation {
@@ -53,6 +63,14 @@ export interface PeggingLink {
   demandId: string;
   supplyId: string;
   quantity: number;
+  nest: number;
+  nestText?: string;
+  parentLinkId: string | null;
+  parentDemandId: string | null;
+  parentSupplyId: string | null;
+  path: string[];
+  duplicate: boolean;
+  duplicateReason?: string;
 }
 
 export interface PartCatalogItem {
@@ -99,7 +117,7 @@ export type SourceMetadata = XlsxSourceMetadata | XmlSourceMetadata;
 
 export interface PriorsartManifest {
   packageVersion: "1.0.0";
-  schemaVersion: "1";
+  schemaVersion: "1" | "2" | "3";
   generatedAt: string;
   source: SourceMetadata;
   datePolicy: DatePolicy;
@@ -110,6 +128,7 @@ export interface PriorsartManifest {
     droppedRows: number;
     ambiguousDateCount: number;
     invalidDateCount: number;
+    nestLevelCounts: Record<string, number>;
   };
 }
 

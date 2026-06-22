@@ -55,7 +55,7 @@ async function finalizePackage(
   const quality = diagnostics.toQualityReport();
   const manifest: PriorsartManifest = {
     packageVersion: "1.0.0",
-    schemaVersion: "1",
+    schemaVersion: "3",
     generatedAt: new Date().toISOString(),
     source,
     datePolicy: options.datePolicy,
@@ -66,6 +66,7 @@ async function finalizePackage(
       droppedRows: quality.droppedRows,
       ambiguousDateCount: quality.ambiguousDateCount,
       invalidDateCount: quality.invalidDateCount,
+      nestLevelCounts: quality.nestLevelCounts,
     },
   };
 

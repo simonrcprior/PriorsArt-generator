@@ -15,4 +15,5 @@ export interface QualityReport {
   droppedRows: number;
   ambiguousDateCount: number;
   invalidDateCount: number;
+  nestLevelCounts: Record<string, number>;
 }

@@ -48,7 +48,23 @@ or
 npm run dev
 ```
 
-In the UI, you can drag and drop XML files, pick a folder, generate the workbook, track progress, and download the result.
+In the UI, you can drag and drop XML files, pick a folder, generate output, track progress, and download the result.
+
+Role-based output behavior in the web UI:
+- Regular users can generate contract-compliant `.priorsart` output only.
+- Admin users can generate either `.priorsart` or `.xlsx`.
+
+Environment flags for admin `.xlsx` access:
+
+```bash
+# Enables .xlsx export support in CLI and web server
+set PRIORSART_ALLOW_XLSX_EXPORT=1
+
+# Optional but recommended: require this key for admin mode in the web UI
+set PRIORSART_WEB_ADMIN_TOKEN=your-shared-admin-key
+```
+
+If `PRIORSART_WEB_ADMIN_TOKEN` is set, admins must enter that key in the UI when selecting Admin mode.
 
 If `npm run web` fails with `tsx` not recognized, run `npm install` first to restore the local dependencies.
 
@@ -153,7 +169,7 @@ Each worksheet name maps to one canonical dataset.
 - `demands`: `id`, `partNumber`, `quantity`, `dueDate`, `sourceType`, `sourceId`
 - `supplies`: `id`, `partNumber`, `quantity`, `availableDate`, `supplyType`, `sourceId`
 - `operations`: `id`, `assemblyId`, `operationCode`, `workCenter`, `hours`
-- `peggingLinks`: `id`, `demandId`, `supplyId`, `quantity`
+- `peggingLinks`: `id`, `demandId`, `supplyId`, `quantity`, `nest`, `nestText`, `parentLinkId`, `parentDemandId`, `parentSupplyId`, `path`, `duplicate`, `duplicateReason`
 - `partCatalog`: `partNumber`, `description`, `uom`
 
 ### Package structure
@@ -169,6 +185,18 @@ Generated `.priorsart` files are ZIP archives containing:
 - `datasets/operations.json`
 - `datasets/peggingLinks.json`
 - `datasets/partCatalog.json`
+
+Schema notes:
+- New packages are written as `schemaVersion: "3"`.
+- `datasets/peggingLinks.json` now includes hierarchy fields per record:
+	- `nest`
+	- `nestText`
+	- `parentLinkId`
+	- `parentDemandId`
+	- `parentSupplyId`
+	- `path`
+	- `duplicate`
+	- `duplicateReason`
 
 ### Tests
 
