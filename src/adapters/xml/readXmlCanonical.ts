@@ -18,7 +18,6 @@ import { parseDateWithPolicy } from "../../pipeline/datePolicy";
 interface XmlReadResult {
   datasets: CanonicalDatasets;
   fileNames: string[];
-  sourceTables: XmlSourceTables;
 }
 
 interface LinkHierarchyInfo {
@@ -1169,7 +1168,6 @@ export async function readXmlCanonical(
   return {
     datasets,
     fileNames: sourceTables.fileNames,
-    sourceTables,
   };
 }
 
