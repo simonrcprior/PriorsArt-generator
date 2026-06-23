@@ -491,6 +491,10 @@ const html = `<!doctype html>
       if (!dropzone || !buildSettingsCard) {
         return;
       }
+
+      // Reset before measuring so previous expansion does not lock future shrink.
+      dropzone.style.minHeight = baseline + 'px';
+
       if (window.matchMedia('(max-width: 900px)').matches) {
         const settingsHeight = buildSettingsCard.getBoundingClientRect().height;
         const mobileTarget = Math.max(baseline, Math.ceil(settingsHeight));
