@@ -80,22 +80,17 @@ const LAYOUT_COLUMNS = [
     "dmdDate",
     "rowsSince1",
     "duplicate",
-    "PORel_PromiseDt",
     "JobHead_CommitDate_c",
-    "earliestN",
     "RemainingOps",
     "RemainingOpsh",
     "MinDue",
-    "Warning",
     "myText1",
     "myText2",
     "myText3",
     "myText4",
     "myText5",
-    "LeadFromTimePhase",
     "willShip",
     "willShipText",
-    "OrderBy",
 ];
 function isoToExcelSerial(isoDate) {
     if (!isoDate) {
@@ -326,6 +321,7 @@ function buildRows(datasets, progress) {
             nest: link.nest,
             nestText: link.nestText ?? ">".repeat(link.nest),
             thisPNum: thisPartNumber,
+            thisDesc: partDescription,
             ThisOrderNum: supply?.supplyType === "ON_HAND" ? undefined : supplyIdentity.orderNum,
             ThisLine: supplyIdentity.line,
             ThisRel: supply?.supplyType === "ON_HAND" ? undefined : supplyIdentity.rel,
@@ -390,8 +386,7 @@ function xmlDateToIso(value) {
     if (!raw) {
         return "";
     }
-    const datePart = raw.includes("T") ? raw.slice(0, 10) : raw;
-    return datePart.replace(/\//g, "-");
+    return raw.includes("T") ? raw.slice(0, 10) : raw;
 }
 function normalizeXmlSupplyType(xmlType) {
     const t = (xmlType ?? "").toUpperCase();
@@ -429,24 +424,17 @@ function buildRowsFromXmlSource(tables, progress) {
     const maxWDate = getMaxDate(supplyRows
         .filter((row) => asString(row.PegSupMst_SupplyType) === "W")
         .map((row) => isoToExcelSerial(xmlDateToIso(row.Calculated_ReportDate ?? row.PegSupMst_ReportDate ?? row.PegSupMst_SupplyDate))));
-    // Parts in timephase: store descriptions for any part with a description (regardless of lead)
-    // LeadFromTimePhase still only populated for parts with non-zero lead
-    // thisDesc uses description if the part has any description in timephase XML
     const partDescriptionByPartNum = new Map();
     const partLeadByPartNum = new Map();
-    const seenPartNums = new Set();
     for (const row of descriptionRows) {
         const partNum = asString(row.PartNum);
         const description = asString(row.PartDescription);
         const lead = asNumber(row.PartLead);
-        if (!partNum || seenPartNums.has(partNum))
-            continue;
-        seenPartNums.add(partNum);
-        if (description) {
-            partDescriptionByPartNum.set(partNum, description);
-        }
-        if (lead !== 0) {
+        if (partNum && lead !== 0 && !partLeadByPartNum.has(partNum)) {
             partLeadByPartNum.set(partNum, lead);
+        }
+        if (partNum && description && !partDescriptionByPartNum.has(partNum)) {
+            partDescriptionByPartNum.set(partNum, description);
         }
     }
     const linksByDemandSeq = new Map();
@@ -458,14 +446,6 @@ function buildRowsFromXmlSource(tables, progress) {
         const existing = linksByDemandSeq.get(demandSeq) ?? [];
         existing.push(link);
         linksByDemandSeq.set(demandSeq, existing);
-    }
-    // Sort links within each demand by SupplySeq ascending (matches Access processing order)
-    for (const links of linksByDemandSeq.values()) {
-        links.sort((a, b) => {
-            const aNum = Number(a.supplySeq.replace(/^SUP-0*/, "")) || 0;
-            const bNum = Number(b.supplySeq.replace(/^SUP-0*/, "")) || 0;
-            return aNum - bNum;
-        });
     }
     const demandBySeq = new Map();
     for (const row of demandRows) {
@@ -557,8 +537,6 @@ function buildRowsFromXmlSource(tables, progress) {
             supplyDate,
         });
     }
-    // Pre-compute willShip per top order (topOrderNum|topLine|topRel)
-    // This will be computed in a post-processing pass after all rows are built
     const seenNested = new Set();
     const output = [];
     function reportRowProgress() {
@@ -567,7 +545,7 @@ function buildRowsFromXmlSource(tables, progress) {
         }
         reportProgress(progress, "Building XML rows", 60 + Math.min(30, Math.floor(output.length / 2500) * 2), `${output.length} rows`);
     }
-    function addDemandRecursive(top, demandSeq, nesting, prevNestedBOM, rowsSince1) {
+    function addDemandRecursive(top, demandSeq, nesting, prevNestedBOM, visitedDemandSeqs, rowsSince1) {
         if (nesting > 50 || output.length >= 200000) {
             return rowsSince1;
         }
@@ -602,10 +580,8 @@ function buildRowsFromXmlSource(tables, progress) {
             const minDue = supply.supplyType === "WO" ? jobSummary?.minDue ?? 0 : 0;
             // earliestN: calculated for UNPLANNED type (N), calculated as maxWDate - Int(-7/5 * lead)
             // Access formula: IIf([thisType] = "N", [MaxOfPegSupMst_SupplyDate] - Int(-7 / 5 * [LeadFromTimePhase]), NULL)
-            const rawLead = partLeadByPartNum.get(supply.partNum);
-            const leadFromTimePhase = rawLead ?? 0;
-            const leadForOutput = rawLead !== undefined ? rawLead : null;
-            const earliestN = supply.supplyType === "UNPLANNED" && maxWDate !== null ? maxWDate - Math.floor((-7 / 5) * leadFromTimePhase) : null;
+            const leadFromTimePhase = partLeadByPartNum.get(supply.partNum) ?? 0;
+            const earliestN = supply.supplyType === "UNPLANNED" && maxWDate !== null ? maxWDate - Math.trunc((-7 / 5) * leadFromTimePhase) : null;
             const willShip = getMaxDate([top.topDate, supply.supplyDate, promiseDate, commitDate, minDue, earliestN, maxWDate]);
             const warning = makeWarning(top.topDate ?? 0, supply.supplyDate ?? 0, promiseDate ?? 0, commitDate ?? 0, minDue ?? 0, maxWDate ?? 0);
             const myText1 = text1(thisType, warning);
@@ -623,7 +599,6 @@ function buildRowsFromXmlSource(tables, progress) {
             const myText4 = `${myText2}${appendTextLine(vendorName)}${appendTextLine(remainingOps)}`;
             // myText5: myText2 + vendor + remainingOpsh
             const myText5 = `${myText2}${appendTextLine(vendorName)}${appendTextLine(remainingOpsh)}`;
-            const orderBy = supply.supplyDate !== null && leadForOutput !== null ? supply.supplyDate + Math.floor(leadFromTimePhase * -7 / 5) - 7 : null;
             output.push({
                 LineID: output.length + 1,
                 Company: top.company,
@@ -636,11 +611,11 @@ function buildRowsFromXmlSource(tables, progress) {
                 nest: nesting,
                 nestText: ">".repeat(nesting),
                 thisPNum: thisPartNumber,
-                thisDesc: partDescription || null,
+                thisDesc: partDescription,
                 // ON_HAND supplies don't have order details, others do
                 ThisOrderNum: supply.supplyType === "ON_HAND" ? null : effectiveSupplyOrdNum,
                 ThisLine: effectiveSupplyLine,
-                ThisRel: supply.supplyType === "ON_HAND" ? null : (effectiveSupplyRel || null),
+                ThisRel: supply.supplyType === "ON_HAND" ? null : effectiveSupplyRel,
                 ThisQty: supply.supplyQty,
                 thisPeggedQty: link.peggedQty,
                 thisDate: supply.supplyDate,
@@ -650,22 +625,17 @@ function buildRowsFromXmlSource(tables, progress) {
                 dmdDate: demand?.demandDate ?? null,
                 rowsSince1,
                 duplicate,
-                PORel_PromiseDt: promiseDate,
                 JobHead_CommitDate_c: commitDate,
-                earliestN,
-                RemainingOps: supply.supplyType === "WO" ? (remainingOps || null) : null,
-                RemainingOpsh: supply.supplyType === "WO" ? (remainingOpsh || null) : null,
+                RemainingOps: supply.supplyType === "WO" ? remainingOps : null,
+                RemainingOpsh: supply.supplyType === "WO" ? remainingOpsh : null,
                 MinDue: minDue ?? 0,
-                Warning: warning || null,
                 myText1,
                 myText2,
                 myText3,
                 myText4,
                 myText5,
-                LeadFromTimePhase: leadForOutput !== null ? String(leadForOutput) : null,
                 willShip,
                 willShipText: "Latest of due, PO promise, WO commit, earliestN or maxW",
-                OrderBy: orderBy,
             });
             reportRowProgress();
             // Recursively get demands where this supply order is the source (matching VBA logic)
@@ -674,16 +644,17 @@ function buildRowsFromXmlSource(tables, progress) {
             const hasSupplyOrder = supply.supplyOrdNum && supply.supplyOrdNum.trim() !== "";
             const isDifferentOrder = supply.supplyOrdNum !== demand?.demandOrdNum;
             if (hasSupplyOrder && isDifferentOrder) {
-                rowsSince1 = getDemandRecursive(top, supply.supplyOrdNum, nesting + 1, nestedBOM, rowsSince1);
+                rowsSince1 = getDemandRecursive(top, supply.supplyOrdNum, nesting + 1, nestedBOM, visitedDemandSeqs, rowsSince1);
             }
         }
         return rowsSince1;
     }
-    function getDemandRecursive(top, supplyOrdNum, nesting, prevNestedBOM, rowsSince1) {
+    function getDemandRecursive(top, supplyOrdNum, nesting, prevNestedBOM, visitedDemandSeqs, rowsSince1) {
         // Find all demands where demandOrdNum matches this supply order number
         for (const demand of demandBySeq.values()) {
-            if (demand.demandOrdNum === supplyOrdNum) {
-                rowsSince1 = addDemandRecursive(top, demand.demandSeq, nesting, prevNestedBOM, rowsSince1);
+            if (demand.demandOrdNum === supplyOrdNum && !visitedDemandSeqs.has(demand.demandSeq)) {
+                visitedDemandSeqs.add(demand.demandSeq);
+                rowsSince1 = addDemandRecursive(top, demand.demandSeq, nesting, prevNestedBOM, visitedDemandSeqs, rowsSince1);
             }
         }
         return rowsSince1;
@@ -701,35 +672,10 @@ function buildRowsFromXmlSource(tables, progress) {
         const topRel = demand.demandOrdRel;
         const topDate = demand.demandDate;
         const topPartNumber = demand.partNum;
+        const visitedDemandSeqs = new Set();
+        visitedDemandSeqs.add(demand.demandSeq);
         let rowsSince1 = 0;
-        rowsSince1 = addDemandRecursive({ company: companyDisplayLabel(demand.company, demand.plant), topPNum: topPartNumber, topOrderNum, topLine, topRel, topQty: demand.demandQty, topDate }, demand.demandSeq, 1, topPartNumber, rowsSince1);
-    }
-    // Post-process: compute willShip per top order (max across all rows for that order)
-    // Access calculates: myMaxdate(Max(PORel_PromiseDt), Max(JobHead_CommitDate_c), Max(MaxOfPegSupMst_SupplyDate), Max(topdate), Max(earliestN))
-    // Group rows by topOrderNum|topLine|topRel and compute max of aggregated date fields
-    const willShipByTopOrder = new Map();
-    // First pass: collect max values per field per top order
-    const topOrderAggregates = new Map();
-    for (const row of output) {
-        const key = `${row.topOrderNum}|${row.topLine}|${row.topRel}`;
-        if (!topOrderAggregates.has(key)) {
-            topOrderAggregates.set(key, { maxPromiseDate: null, maxCommitDate: null, maxTopDate: null, maxEarliestN: null });
-        }
-        const agg = topOrderAggregates.get(key);
-        agg.maxPromiseDate = getMaxDate([agg.maxPromiseDate, row.PORel_PromiseDt ?? null]);
-        agg.maxCommitDate = getMaxDate([agg.maxCommitDate, row.JobHead_CommitDate_c ?? null]);
-        agg.maxTopDate = getMaxDate([agg.maxTopDate, row.topDate ?? null]);
-        agg.maxEarliestN = getMaxDate([agg.maxEarliestN, row.earliestN ?? null]);
-    }
-    // Second pass: compute willShip for each top order
-    for (const [key, agg] of topOrderAggregates.entries()) {
-        const willShip = getMaxDate([agg.maxPromiseDate, agg.maxCommitDate, agg.maxTopDate, agg.maxEarliestN, maxWDate]);
-        willShipByTopOrder.set(key, willShip);
-    }
-    // Update all rows with the computed willShip for their top order
-    for (const row of output) {
-        const key = `${row.topOrderNum}|${row.topLine}|${row.topRel}`;
-        row.willShip = willShipByTopOrder.get(key) ?? null;
+        rowsSince1 = addDemandRecursive({ company: companyDisplayLabel(demand.company, demand.plant), topPNum: topPartNumber, topOrderNum, topLine, topRel, topQty: demand.demandQty, topDate }, demand.demandSeq, 1, topPartNumber, visitedDemandSeqs, rowsSince1);
     }
     return output;
 }

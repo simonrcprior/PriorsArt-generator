@@ -6,7 +6,7 @@ interface XmlReadResult {
     sourceTables: XmlSourceTables;
 }
 export type XmlRow = Record<string, unknown>;
-export type XmlFileKey = "demands" | "jobs" | "links" | "poDetails" | "salesOrders" | "supplies" | "partDescriptions";
+export type XmlFileKey = "demands" | "jobs" | "links" | "poDetails" | "supplies" | "partDescriptions";
 export interface XmlSourceTables {
     basePath: string;
     rowsByFile: Record<XmlFileKey, XmlRow[]>;

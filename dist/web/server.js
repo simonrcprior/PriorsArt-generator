@@ -10,9 +10,115 @@ const node_os_1 = __importDefault(require("node:os"));
 const node_path_1 = __importDefault(require("node:path"));
 const exportXlsx_1 = require("../pipeline/exportXlsx");
 const generate_1 = require("../pipeline/generate");
+const REQUIRED_XML_CHECKS = [
+    {
+        key: "demands",
+        label: "PEGDMDMST",
+        requiredFields: [
+            "PegDmdMst_Company",
+            "PegDmdMst_Plant",
+            "PegDmdMst_DemandSeq",
+            "PegDmdMst_DemandOrdNum",
+            "PegDmdMst_DemandOrdLine",
+            "PegDmdMst_DemandOrdRel",
+            "PegDmdMst_PartNum",
+            "PegDmdMst_DemandType",
+            "PegDmdMst_DemandDate",
+            "PegDmdMst_DemandQty",
+            "PegDmdMst_PeggedQty",
+        ],
+    },
+    {
+        key: "jobs",
+        label: "PEGJOBINFO",
+        requiredFields: [
+            "JobHead_Company",
+            "JobHead_Plant",
+            "JobHead_JobNum",
+            "JobHead_PartNum",
+            "JobOper_OprSeq",
+            "JobOper_OpCode",
+            "JobOper_RunQty",
+            "JobOper_EstSetHours",
+            "JobOper_OpComplete",
+            "JobOper_StartDate",
+            "JobOper_EstProdHours",
+            "JobOper_DueDate",
+        ],
+    },
+    {
+        key: "links",
+        label: "PEGLINK",
+        requiredFields: [
+            "PegLink_Company",
+            "PegLink_PeggedQty",
+            "PegLink_PartNum",
+            "PegLink_Plant",
+            "PegLink_DemandSeq",
+            "PegLink_SupplySeq",
+        ],
+    },
+    {
+        key: "poDetails",
+        label: "PEGPODETAIL",
+        requiredFields: ["PORel_PONum", "PORel_POLine", "PORel_PORelNum", "PODetail_PartNum"],
+    },
+    {
+        key: "supplies",
+        label: "PEGSUPMST",
+        requiredFields: [
+            "PegSupMst_Company",
+            "PegSupMst_Plant",
+            "PegSupMst_SupplySeq",
+            "PegSupMst_SupplyOrdNum",
+            "PegSupMst_SupplyOrdLine",
+            "PegSupMst_SupplyOrdRel",
+            "PegSupMst_PartNum",
+            "PegSupMst_SupplyDate",
+            "PegSupMst_SupplyQty",
+        ],
+    },
+    {
+        key: "partDescriptions",
+        label: "Time Phase",
+        requiredFields: ["txtPartNum", "txtPartDescription", "txtCalc_DspLeadTime2"],
+    },
+];
 const PORT = Number(process.env.PORT ?? 4173);
 const XLSX_EXPORT_ENABLED = process.env.PRIORSART_ALLOW_XLSX_EXPORT === "1";
 const jobs = new Map();
+function hasXmlField(xml, fieldName) {
+    if (fieldName.startsWith("txt")) {
+        return xml.includes(` ${fieldName}=`) || xml.includes(`@_${fieldName}`) || xml.includes(`<${fieldName}>`);
+    }
+    return xml.includes(`<${fieldName}>`) || xml.includes(`@_${fieldName}`);
+}
+function buildFileChecks(files) {
+    const xmlFiles = files
+        .filter((file) => file.name.toLowerCase().endsWith(".xml"))
+        .map((file) => ({
+        name: file.name,
+        text: Buffer.from(file.contentBase64, "base64").toString("utf8"),
+    }));
+    const checks = REQUIRED_XML_CHECKS.map((spec) => {
+        const matched = xmlFiles.find((xmlFile) => spec.requiredFields.every((field) => hasXmlField(xmlFile.text, field)));
+        if (matched) {
+            return {
+                key: spec.key,
+                label: spec.label,
+                ok: true,
+                fileName: matched.name,
+            };
+        }
+        return {
+            key: spec.key,
+            label: spec.label,
+            ok: false,
+            detail: "Missing required fields",
+        };
+    });
+    return checks;
+}
 const html = `<!doctype html>
 <html lang="en">
 <head>
@@ -74,9 +180,10 @@ const html = `<!doctype html>
     }
     .grid {
       display: grid;
-      grid-template-columns: 1.3fr 0.7fr;
+      grid-template-columns: 1fr 1fr;
+      grid-template-rows: auto auto;
       gap: 16px;
-      align-items: stretch;
+      align-items: start;
     }
     .card {
       background: var(--panel);
@@ -90,7 +197,7 @@ const html = `<!doctype html>
       background: linear-gradient(180deg, #fafcff 0%, #f4f8ff 100%);
       border-radius: 8px;
       padding: 20px;
-      min-height: 380px;
+      min-height: 0;
       display: grid;
       place-items: center;
       text-align: center;
@@ -107,6 +214,18 @@ const html = `<!doctype html>
       margin: 8px 0;
     }
     .drop-copy { color: var(--muted); margin: 0; line-height: 1.5; font-size: 13px; }
+    .required-files {
+      margin: 12px 0 0;
+      padding-left: 18px;
+      text-align: left;
+      color: var(--muted);
+      font-size: 12px;
+      line-height: 1.45;
+    }
+    .required-files strong {
+      color: #193761;
+      font-size: 12px;
+    }
     .drop-copy code {
       background: #eaf0fc;
       border: 1px solid #d2ddf2;
@@ -140,12 +259,33 @@ const html = `<!doctype html>
       border: 1px solid #d8e0ee;
       color: var(--text);
     }
+    .file-row > div:first-child {
+      min-width: 0;
+      display: grid;
+      gap: 2px;
+    }
+    .file-row .file-remove {
+      flex: 0 0 auto;
+      border: 1px solid #d1d9e8;
+      background: #fff;
+      color: #9a2f3c;
+      border-radius: 999px;
+      width: 28px;
+      height: 28px;
+      line-height: 1;
+      font-weight: 700;
+      cursor: pointer;
+    }
+    .file-row .file-remove:hover {
+      background: #fff3f5;
+      border-color: #f0b9c1;
+    }
     .file-row span { color: var(--muted); font-size: 12px; }
-    .side {
-      display: flex;
-      flex-direction: column;
-      gap: 16px;
-      height: 100%;
+    #buildSettingsCard { grid-column: 1; grid-row: 1; }
+    #inputCard { grid-column: 1; grid-row: 2; }
+    #rightColumn {
+      grid-column: 2;
+      grid-row: 1 / span 2;
     }
     .card-title {
       display: flex;
@@ -272,6 +412,44 @@ const html = `<!doctype html>
       line-height: 1.5;
     }
     .message.error { color: var(--danger); }
+    .checks {
+      display: grid;
+      gap: 6px;
+      margin-top: 2px;
+    }
+    .check-row {
+      display: flex;
+      justify-content: space-between;
+      gap: 10px;
+      padding: 8px 10px;
+      border: 1px solid #d9e2f0;
+      border-radius: 8px;
+      background: #f8fbff;
+      font-size: 12px;
+      color: var(--muted);
+    }
+    .check-row strong {
+      color: #193761;
+      font-size: 12px;
+    }
+    .check-ok {
+      color: #177245;
+      font-weight: 700;
+    }
+    .check-fail {
+      color: #b43a47;
+      font-weight: 700;
+    }
+    .checks-legend {
+      margin-top: 4px;
+      padding: 8px 10px;
+      border: 1px solid #d9e2f0;
+      border-radius: 8px;
+      background: #f8fbff;
+      color: var(--muted);
+      font-size: 12px;
+      line-height: 1.35;
+    }
     .download {
       display: inline-flex;
       align-items: center;
@@ -291,7 +469,9 @@ const html = `<!doctype html>
     }
     @media (max-width: 900px) {
       .grid { grid-template-columns: 1fr; }
-      .side { height: auto; }
+      #buildSettingsCard { grid-column: 1; grid-row: 1; }
+      #inputCard { grid-column: 1; grid-row: 2; }
+      #rightColumn { grid-column: 1; grid-row: 3; height: auto; }
       .viewer-head {
         flex-direction: column;
         align-items: flex-start;
@@ -304,16 +484,46 @@ const html = `<!doctype html>
     <div class="shell">
       <header class="viewer-head">
         <div class="brand">
-          <img src="/PriorsArt1.png" alt="PriorsArt" />
+          <img src="/PriorsPart_logo_webversion_small_400x150.png" alt="PriorsPart" />
         </div>
       </header>
 
       <div class="grid">
+        <div class="card" id="buildSettingsCard">
+          <div class="card-title">
+            <h2>Build settings</h2>
+            <div class="subtle">Saved locally</div>
+          </div>
+          <label>
+            Role
+            <select id="roleMode">
+              <option value="user" selected>User</option>
+              <option value="admin">Admin</option>
+            </select>
+          </label>
+          <label id="adminKeyWrap" style="display:none">
+            Admin access key
+            <input id="adminKey" type="password" placeholder="Enter admin key" autocomplete="off" />
+          </label>
+          <label id="outputFormatWrap" style="display:none">
+            Output format
+            <select id="outputFormat">
+              <option value="priorsart" selected>Contract compliant .priorsart</option>
+              <option value="xlsx">Flattened .xlsx (admin only)</option>
+            </select>
+          </label>
+          <label>
+            Output file name
+            <input id="outputName" type="text" value="" />
+          </label>
+          <button id="goBtn" class="btn">Generate</button>
+        </div>
+
         <div class="card" id="inputCard">
           <div id="dropzone" class="dropzone">
             <div>
               <div class="drop-title">Drag and drop XML files here</div>
-              <p class="drop-copy">Drop the XML files from the source folder, or pick a folder/file set with the buttons below.</p>
+              <p class="drop-copy" id="dropCopy">Drop the XML files from the source folder, or pick a folder/file set with the buttons below.</p>
               <input id="fileInput" type="file" accept=".xml,.json" multiple style="display:none" />
               <input id="folderInput" type="file" accept=".xml,.json" multiple webkitdirectory style="display:none" />
               <div class="file-actions">
@@ -325,56 +535,18 @@ const html = `<!doctype html>
           </div>
         </div>
 
-        <div class="side" id="rightColumn">
-          <div class="card" id="buildSettingsCard">
-            <div class="card-title">
-              <h2>Build settings</h2>
-              <div class="subtle">Saved locally</div>
-            </div>
-            <label>
-              Role
-              <select id="roleMode">
-                <option value="user" selected>User</option>
-                <option value="admin">Admin</option>
-              </select>
-            </label>
-            <label id="adminKeyWrap" style="display:none">
-              Admin access key
-              <input id="adminKey" type="password" placeholder="Enter admin key" autocomplete="off" />
-            </label>
-            <label id="outputFormatWrap" style="display:none">
-              Output format
-              <select id="outputFormat">
-                <option value="priorsart" selected>Contract compliant .priorsart</option>
-                <option value="xlsx">Flattened .xlsx (admin only)</option>
-              </select>
-            </label>
-            <label>
-              Output file name
-              <input id="outputName" type="text" value="" />
-            </label>
-            <label>
-              Date order
-              <select id="dateOrder">
-                <option value="YMD" selected>YMD</option>
-                <option value="MDY">MDY</option>
-                <option value="DMY">DMY</option>
-              </select>
-            </label>
-            <button id="goBtn" class="btn">Generate</button>
+        <div class="card progress-wrap" id="rightColumn">
+          <div class="card-title">
+            <h2>Progress</h2>
+            <div class="subtle" id="progressHint">Waiting</div>
           </div>
-
-          <div class="card progress-wrap">
-            <div class="card-title">
-              <h2>Progress</h2>
-              <div class="subtle" id="progressHint">Waiting</div>
-            </div>
-            <div id="runSummary" class="run-summary">No completed run yet. The latest output summary will appear here after the first successful run.</div>
-            <div class="status"><strong id="stage">Idle</strong><span id="percent">0%</span></div>
-            <div class="progress-bar"><div id="bar"></div></div>
-            <div id="message" class="message">Ready when you are.</div>
-            <a id="download" class="download" href="#" style="display:none" download>Download output</a>
-          </div>
+          <div id="runSummary" class="run-summary">No completed run yet. The latest output summary will appear here after the first successful run.</div>
+          <div class="status"><strong id="stage">Idle</strong><span id="percent">0%</span></div>
+          <div class="progress-bar"><div id="bar"></div></div>
+          <div id="fileChecks" class="checks"></div>
+          <div class="checks-legend">Legend: <span class="check-ok">Chosen</span> means the file has been selected, <span class="check-ok">✓ Loaded</span> means required fields matched after generate runs, and <span class="check-fail">✗ Missing</span> means required fields were not found. Optional rows can show as missing without blocking generation.</div>
+          <div id="message" class="message"></div>
+          <a id="download" class="download" href="#" style="display:none" download>Download output</a>
         </div>
       </div>
     </div>
@@ -386,6 +558,7 @@ const html = `<!doctype html>
     const dropzone = document.getElementById('dropzone');
     const fileInput = document.getElementById('fileInput');
     const folderInput = document.getElementById('folderInput');
+    const dropCopy = document.getElementById('dropCopy');
     const pickFilesBtn = document.getElementById('pickFilesBtn');
     const pickFolderBtn = document.getElementById('pickFolderBtn');
     const filesEl = document.getElementById('files');
@@ -396,7 +569,6 @@ const html = `<!doctype html>
     const outputFormatWrap = document.getElementById('outputFormatWrap');
     const outputFormat = document.getElementById('outputFormat');
     const outputName = document.getElementById('outputName');
-    const dateOrder = document.getElementById('dateOrder');
     const rightColumn = document.getElementById('rightColumn');
     const inputCard = document.getElementById('inputCard');
     const buildSettingsCard = document.getElementById('buildSettingsCard');
@@ -407,9 +579,11 @@ const html = `<!doctype html>
     const downloadEl = document.getElementById('download');
     const progressHintEl = document.getElementById('progressHint');
     const runSummaryEl = document.getElementById('runSummary');
+    const fileChecksEl = document.getElementById('fileChecks');
 
     let selectedFiles = [];
     let pollTimer = null;
+    let currentFileChecks = [];
     let prefs = { roleMode: 'user', outputFormat: 'priorsart', outputName: '', dateOrder: 'YMD', lastRun: null };
 
     function currentDateStamp() {
@@ -449,12 +623,57 @@ const html = `<!doctype html>
       return trimmed.replace(/\.(xlsx|priorsart)$/i, '') + ext;
     }
 
+    function allowedFilePattern() {
+      return /\.(xml|json)$/i;
+    }
+
+    function syncUploadAccept() {
+      const accept = '.xml,.json';
+      fileInput.setAttribute('accept', accept);
+      folderInput.setAttribute('accept', accept);
+    }
+
+    function renderFileChecks(checks) {
+      if (!fileChecksEl) return;
+      if (Array.isArray(checks)) {
+        currentFileChecks = checks;
+      }
+      if (!Array.isArray(currentFileChecks) || currentFileChecks.length === 0) {
+        fileChecksEl.innerHTML = '';
+        return;
+      }
+
+      const visibleChecks = currentFileChecks.filter((check) => {
+        return true;
+      });
+
+      if (!visibleChecks.length) {
+        fileChecksEl.innerHTML = '';
+        return;
+      }
+
+      fileChecksEl.innerHTML = visibleChecks.map((check) => {
+        const statusText = check.state === 'chosen' ? 'Chosen' : (check.ok ? '✓ Loaded' : '✗ Missing');
+        const statusClass = check.ok ? 'check-ok' : 'check-fail';
+        const detail = check.fileName ? check.fileName : (check.detail || '');
+        return '<div class="check-row">' +
+          '<div><strong>' + escapeHtml(check.label || '') + '</strong><div>' + escapeHtml(detail) + '</div></div>' +
+          '<div class="' + statusClass + '">' + statusText + '</div>' +
+          '</div>';
+      }).join('');
+    }
+
     function applyRoleAndFormatRules() {
       if (!WEB_XLSX_ENABLED) {
         outputFormat.value = 'priorsart';
       }
 
       const isAdmin = roleMode.value === 'admin';
+      if (dropCopy) {
+        dropCopy.textContent = isAdmin
+            ? 'Drop the XML files from the source folder, or pick a folder/file set with the buttons below.'
+          : 'Drop the XML files from the source folder, or pick a folder/file set with the buttons below.';
+      }
       const canChooseXlsx = WEB_XLSX_ENABLED && isAdmin;
       outputFormat.querySelector('option[value="xlsx"]').disabled = !canChooseXlsx;
       outputFormatWrap.style.display = isAdmin ? '' : 'none';
@@ -465,34 +684,16 @@ const html = `<!doctype html>
 
       adminKeyWrap.style.display = 'none';
       outputName.value = normalizeOutputName(outputName.value, outputFormat.value);
+      syncUploadAccept();
+      renderFileChecks();
       syncDropzoneHeight();
     }
 
     function syncDropzoneHeight() {
-      const baseline = 380;
-      if (!dropzone || !buildSettingsCard) {
+      if (!dropzone) {
         return;
       }
-      if (window.matchMedia('(max-width: 900px)').matches) {
-        const settingsHeight = buildSettingsCard.getBoundingClientRect().height;
-        const mobileTarget = Math.max(baseline, Math.ceil(settingsHeight));
-        dropzone.style.minHeight = mobileTarget + 'px';
-        return;
-      }
-
-      if (!rightColumn || !inputCard) {
-        const settingsHeight = buildSettingsCard.getBoundingClientRect().height;
-        const fallbackTarget = Math.max(baseline, Math.ceil(settingsHeight));
-        dropzone.style.minHeight = fallbackTarget + 'px';
-        return;
-      }
-
-      const rightHeight = Math.ceil(rightColumn.getBoundingClientRect().height);
-      const cardStyles = window.getComputedStyle(inputCard);
-      const cardVerticalPadding =
-        Number.parseFloat(cardStyles.paddingTop || '0') + Number.parseFloat(cardStyles.paddingBottom || '0');
-      const target = Math.max(baseline, Math.ceil(rightHeight - cardVerticalPadding));
-      dropzone.style.minHeight = target + 'px';
+      dropzone.style.minHeight = '0px';
     }
 
     function normalizeRun(value) {
@@ -522,6 +723,78 @@ const html = `<!doctype html>
       return files.slice(0, 3).join(', ') + ' +' + (files.length - 3) + ' more';
     }
 
+    function getFileSelectionKey(file) {
+      const relativePath = String(file.webkitRelativePath || file.relativePath || '').trim().toLowerCase();
+      if (relativePath) {
+        return relativePath;
+      }
+      return String(file.name || '').trim().toLowerCase();
+    }
+
+    function mergeSelectedFiles(files) {
+      const nextFiles = [...selectedFiles];
+      const seen = new Set(nextFiles.map(getFileSelectionKey));
+      for (const file of Array.isArray(files) ? files : []) {
+        const key = getFileSelectionKey(file);
+        if (!key || seen.has(key)) {
+          continue;
+        }
+        seen.add(key);
+        nextFiles.push(file);
+      }
+      selectedFiles = nextFiles;
+    }
+
+    function removeSelectedFile(fileKey) {
+      selectedFiles = selectedFiles.filter((file) => getFileSelectionKey(file) !== fileKey);
+      renderFiles();
+      syncDropzoneHeight();
+    }
+
+    function getSelectedFileKey(file) {
+      return String(file.webkitRelativePath || file.relativePath || file.name || '').toLowerCase();
+    }
+
+    function buildSelectionFileChecks(files) {
+      const selectedFiles = Array.isArray(files) ? files : [];
+
+      const specs = [
+        { key: 'demands', label: 'PEGDMDMST', names: ['pegdmdmst.xml'] },
+        { key: 'jobs', label: 'PEGJOBINFO', names: ['pegjobinfosp2.xml', 'pegjobinfo.xml'] },
+        { key: 'links', label: 'PEGLINK', names: ['peglink.xml'] },
+        { key: 'poDetails', label: 'PEGPODETAIL', names: ['pegpodetail.xml'] },
+        { key: 'supplies', label: 'PEGSUPMST', names: ['pegsupmst.xml'] },
+        { key: 'partDescriptions', label: 'Time Phase', names: ['time phase material requirement_447293.xml'] },
+      ];
+
+      return specs.map((spec) => {
+        const matchedFile = selectedFiles.find((file) => {
+          const fileKey = getSelectedFileKey(file);
+          const baseName = String(file.name || '').toLowerCase();
+          return spec.names.some((name) => fileKey.endsWith(name) || baseName === name || fileKey.includes(name.replace(/\.xml$/, '')));
+        });
+
+        if (matchedFile) {
+          return {
+            key: spec.key,
+            label: spec.label,
+            ok: true,
+            fileName: matchedFile.webkitRelativePath || matchedFile.relativePath || matchedFile.name,
+            detail: 'Chosen',
+            state: 'chosen',
+          };
+        }
+
+        return {
+          key: spec.key,
+          label: spec.label,
+          ok: false,
+          detail: selectedFiles.length ? 'Missing' : 'Pending',
+          state: selectedFiles.length ? 'missing' : 'pending',
+        };
+      });
+    }
+
     function loadPrefs() {
       try {
         const raw = localStorage.getItem(PREF_KEY);
@@ -544,7 +817,6 @@ const html = `<!doctype html>
       roleMode.value = prefs.roleMode;
       outputFormat.value = prefs.outputFormat;
       outputName.value = prefs.outputName;
-      dateOrder.value = prefs.dateOrder;
       applyRoleAndFormatRules();
       if (isLegacyOutputName(outputName.value) || !isGeneratedDateOutputName(outputName.value, outputFormat.value)) {
         setOutputNameDefault(outputFormat.value);
@@ -584,24 +856,26 @@ const html = `<!doctype html>
 
       runSummaryEl.innerHTML =
         '<strong>' + escapeHtml(prefs.lastRun.outputName || defaultOutputName((prefs.lastRun.outputFormat || 'priorsart') === 'xlsx' ? 'xlsx' : 'priorsart')) + '</strong>' +
-        '<span class="meta">' + escapeHtml((prefs.lastRun.outputFormat || 'priorsart') + ' · ' + (prefs.lastRun.files || []).length + ' file(s) · ' + (prefs.lastRun.dateOrder || 'YMD') + (prefs.lastRun.rows ? ' · ' + prefs.lastRun.rows : '')) + '</span>' +
-        '<span class="meta">' + escapeHtml(summarizeFiles(prefs.lastRun.files || [])) + '</span>';
+        '<span class="meta">' + escapeHtml((prefs.lastRun.outputFormat || 'priorsart') + ' · ' + (prefs.lastRun.files || []).length + ' file(s) · ' + (prefs.lastRun.dateOrder || 'YMD') + (prefs.lastRun.rows ? ' · ' + prefs.lastRun.rows : '')) + '</span>';
     }
 
     function renderFiles() {
-      filesEl.innerHTML = selectedFiles.length
-        ? selectedFiles
-            .map(
-              (f) =>
-                '<div class="file-row"><div><strong>' +
-                escapeHtml(f.webkitRelativePath || f.relativePath || f.name) +
-                '</strong><span> ' +
-                Math.round(f.size / 1024) +
-                ' KB</span></div></div>'
-            )
-            .join('')
-        : '<div class="file-row"><div><strong>No files selected</strong><span> drop files or click the area to browse</span></div></div>';
+      filesEl.innerHTML = selectedFiles
+        .map(
+          (f) =>
+            '<div class="file-row"><div><strong>' +
+            escapeHtml(f.webkitRelativePath || f.relativePath || f.name) +
+            '</strong><span> ' +
+            Math.round(f.size / 1024) +
+            ' KB</span></div><button type="button" class="file-remove" data-file-key="' +
+            escapeHtml(getFileSelectionKey(f)) +
+            '" aria-label="Remove ' +
+            escapeHtml(f.webkitRelativePath || f.relativePath || f.name) +
+            '">×</button></div>'
+        )
+        .join('');
       progressHintEl.textContent = selectedFiles.length ? selectedFiles.length + ' file(s) ready' : 'Waiting';
+      renderFileChecks(buildSelectionFileChecks(selectedFiles));
     }
 
     function escapeHtml(value) {
@@ -668,7 +942,7 @@ const html = `<!doctype html>
         body: JSON.stringify({
           files,
           outputName: outputName.value.trim(),
-          dateOrder: dateOrder.value,
+          dateOrder: 'YMD',
           outputFormat: outputFormat.value,
           roleMode: roleMode.value,
           adminKey: adminKey.value,
@@ -688,6 +962,7 @@ const html = `<!doctype html>
         try {
           const job = await refreshJob(jobId);
           setProgress(job.progress, job.stage, job.detail || job.error || '');
+          renderFileChecks(job.fileChecks || []);
           if (job.status === 'done') {
             clearInterval(pollTimer);
             downloadEl.href = '/api/jobs/' + jobId + '/download';
@@ -695,11 +970,11 @@ const html = `<!doctype html>
             goBtn.disabled = false;
             setProgress(100, 'Done', 'Output is ready to download.');
             addRecentRun({
-              signature: selectedFiles.map((file) => file.webkitRelativePath || file.relativePath || file.name).join('|') + '|' + outputName.value.trim() + '|' + outputFormat.value + '|' + dateOrder.value,
+              signature: selectedFiles.map((file) => file.webkitRelativePath || file.relativePath || file.name).join('|') + '|' + outputName.value.trim() + '|' + outputFormat.value + '|YMD',
               roleMode: roleMode.value,
               outputFormat: outputFormat.value,
               outputName: outputName.value.trim(),
-              dateOrder: dateOrder.value,
+              dateOrder: 'YMD',
               files: selectedFiles.map((file) => file.webkitRelativePath || file.relativePath || file.name),
               rows: job.detail || '',
             });
@@ -745,8 +1020,9 @@ const html = `<!doctype html>
           };
 
           await collectFiles(handle, '');
-          selectedFiles = files;
+          mergeSelectedFiles(files);
           renderFiles();
+          syncDropzoneHeight();
         }).catch(() => {
           // User cancelled folder selection.
         });
@@ -756,14 +1032,16 @@ const html = `<!doctype html>
       folderInput.click();
     });
     fileInput.addEventListener('change', () => {
-      selectedFiles = Array.from(fileInput.files || []);
+      mergeSelectedFiles(Array.from(fileInput.files || []));
       renderFiles();
       syncDropzoneHeight();
+      fileInput.value = '';
     });
     folderInput.addEventListener('change', () => {
-      selectedFiles = Array.from(folderInput.files || []);
+      mergeSelectedFiles(Array.from(folderInput.files || []));
       renderFiles();
       syncDropzoneHeight();
+      folderInput.value = '';
     });
     dropzone.addEventListener('dragover', (event) => {
       event.preventDefault();
@@ -773,8 +1051,24 @@ const html = `<!doctype html>
     dropzone.addEventListener('drop', (event) => {
       event.preventDefault();
       dropzone.classList.remove('dragover');
-      selectedFiles = Array.from(event.dataTransfer.files || []).filter((file) => /\.(xml|json)$/i.test(file.name));
+      mergeSelectedFiles(Array.from(event.dataTransfer.files || []).filter((file) => allowedFilePattern().test(file.name)));
       renderFiles();
+      syncDropzoneHeight();
+    });
+    filesEl.addEventListener('click', (event) => {
+      const target = event.target;
+      if (!(target instanceof HTMLElement)) {
+        return;
+      }
+      const removeBtn = target.closest('.file-remove');
+      if (!removeBtn) {
+        return;
+      }
+      const fileKey = removeBtn.getAttribute('data-file-key');
+      if (!fileKey) {
+        return;
+      }
+      removeSelectedFile(fileKey);
     });
     outputName.addEventListener('input', () => {
       prefs.outputName = normalizeOutputName(outputName.value, outputFormat.value);
@@ -795,11 +1089,6 @@ const html = `<!doctype html>
       setOutputNameDefault(outputFormat.value);
       savePrefs();
     });
-    dateOrder.addEventListener('change', () => {
-      prefs.dateOrder = dateOrder.value;
-      savePrefs();
-      syncDropzoneHeight();
-    });
     goBtn.addEventListener('click', () => {
       startJob().catch((error) => {
         goBtn.disabled = false;
@@ -808,8 +1097,10 @@ const html = `<!doctype html>
     });
 
     loadPrefs();
+    syncUploadAccept();
     renderFiles();
     syncDropzoneHeight();
+    renderFileChecks(buildSelectionFileChecks([]));
     window.addEventListener('resize', syncDropzoneHeight);
   </script>
 </body>
@@ -840,6 +1131,8 @@ async function runJob(jobId, body) {
     const outputName = normalizeOutputName(body.outputName, body.outputFormat);
     const outputFile = node_path_1.default.join(tempDir, outputName);
     const sourcePath = tempDir;
+    const fileChecks = buildFileChecks(body.files);
+    updateJob(jobId, { fileChecks, progress: 20, stage: "Checking required XML fields" });
     try {
         if (body.outputFormat === "xlsx") {
             const result = await (0, exportXlsx_1.exportFlattenedXlsx)({
@@ -947,9 +1240,9 @@ const server = node_http_1.default.createServer(async (req, res) => {
         res.end(html);
         return;
     }
-    if (req.method === "GET" && url.pathname === "/PriorsArt1.png") {
+    if (req.method === "GET" && url.pathname === "/PriorsPart_logo_webversion_small_400x150.png") {
         try {
-            const logoPath = node_path_1.default.resolve(process.cwd(), "PriorsArt1.png");
+            const logoPath = node_path_1.default.resolve(process.cwd(), "PriorsPart_logo_webversion_small_400x150.png");
             const buffer = await promises_1.default.readFile(logoPath);
             res.writeHead(200, { "Content-Type": "image/png", "Cache-Control": "public, max-age=3600" });
             res.end(buffer);
@@ -1020,6 +1313,9 @@ const server = node_http_1.default.createServer(async (req, res) => {
             try {
                 const body = JSON.parse(Buffer.concat(chunks).toString("utf8"));
                 if (!Array.isArray(body.files) || body.files.length === 0) {
+                    throw new Error("At least one XML file is required.");
+                }
+                if (!body.files.some((file) => file.name.toLowerCase().endsWith(".xml"))) {
                     throw new Error("At least one XML file is required.");
                 }
                 const roleMode = body.roleMode === "admin" ? "admin" : "user";
