@@ -34,7 +34,7 @@ function reportProgress(
   progress(update);
 }
 
-interface ProcessedLayoutRow {
+export interface ProcessedLayoutRow {
   LineID?: number;
   Company?: string;
   topPNum?: string;
@@ -94,6 +94,7 @@ const LAYOUT_COLUMNS: Array<keyof ProcessedLayoutRow> = [
   "nest",
   "nestText",
   "thisPNum",
+  "thisDesc",
   "ThisOrderNum",
   "ThisLine",
   "ThisRel",
@@ -411,6 +412,7 @@ function buildRows(datasets: CanonicalDatasets, progress?: FlattenedXlsxProgress
       nest: link.nest,
       nestText: link.nestText ?? ">".repeat(link.nest),
       thisPNum: thisPartNumber,
+      thisDesc: partDescription,
       ThisOrderNum: supply?.supplyType === "ON_HAND" ? undefined : supplyIdentity.orderNum,
       ThisLine: supplyIdentity.line,
       ThisRel: supply?.supplyType === "ON_HAND" ? undefined : supplyIdentity.rel,
@@ -516,7 +518,7 @@ function getMinDate(values: Array<number | null>): number | null {
   return Math.min(...filtered);
 }
 
-function buildRowsFromXmlSource(tables: XmlSourceTables, progress?: FlattenedXlsxProgressReporter): ProcessedLayoutRow[] {
+export function buildRowsFromXmlSource(tables: XmlSourceTables, progress?: FlattenedXlsxProgressReporter): ProcessedLayoutRow[] {
   reportProgress(progress, "Preparing XML workbook rows", 20);
 
   const demandRows = tables.rowsByFile.demands;
@@ -742,6 +744,7 @@ function buildRowsFromXmlSource(tables: XmlSourceTables, progress?: FlattenedXls
         nest: nesting,
         nestText: ">".repeat(nesting),
         thisPNum: thisPartNumber,
+        thisDesc: partDescription,
         // ON_HAND supplies don't have order details, others do
         ThisOrderNum: supply.supplyType === "ON_HAND" ? null : effectiveSupplyOrdNum,
         ThisLine: effectiveSupplyLine,

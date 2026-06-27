@@ -18,7 +18,7 @@ export interface ProcessedLayoutRow {
     nest?: number;
     nestText?: string;
     thisPNum?: string;
-    thisDesc?: string | null;
+    thisDesc?: string;
     thisOrderNum?: string;
     thisLine?: string;
     thisRel?: string;
@@ -42,13 +42,13 @@ export interface ProcessedLayoutRow {
     RemainingOps?: string | null | undefined;
     RemainingOpsh?: string | null | undefined;
     MinDue?: number | null | undefined;
-    Warning?: string | null;
+    Warning?: string;
     myText1?: string;
     myText2?: string;
     myText3?: string;
     myText4?: string;
     myText5?: string;
-    LeadFromTimePhase?: string | number | null;
+    LeadFromTimePhase?: number;
     willShip?: number | null;
     willShipText?: string;
     OrderBy?: number | null;

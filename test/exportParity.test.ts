@@ -3,6 +3,7 @@ import os from "node:os";
 import path from "node:path";
 import * as XLSX from "xlsx";
 import { describe, expect, test } from "vitest";
+import { readXmlSourceTables } from "../src/adapters/xml/readXmlCanonical";
 import { exportFlattenedXlsx } from "../src/pipeline/exportXlsx";
 
 function xmlRows(rows: Array<Record<string, string | number>>): string {
@@ -66,6 +67,7 @@ async function writeMinimalXmlFixture(dir: string): Promise<void> {
           PegSupMst_Company: "EPIC06",
           PegSupMst_Plant: "MFGSYS",
           Calculated_ReportDate: "2026-01-15",
+          Calculated_UnusedField: "should-not-load",
         },
       ]),
     },
@@ -135,15 +137,25 @@ describe("exportFlattenedXlsx XML canonical enrichment", () => {
     const rows = readFirstSheetRows(output);
     expect(rows.length).toBeGreaterThan(0);
 
-    const first = rows[0] ?? {};
-    expect(String(first.Company ?? "")).toBe("EPIC06-MFGSYS");
-    expect(String(first.myText1 ?? "")).toBe("Y");
-    expect(String(first.myText2 ?? "")).toBe("P /PO500 /1 /1 /5 /5 / Due:19-Jan-2026 / Promise:19-Jan-2026");
-    expect(String(first.myText3 ?? "")).toBe(String(first.myText2 ?? ""));
-    expect(String(first.myText4 ?? "")).toContain("Vendor A");
-    expect(String(first.myText5 ?? "")).toContain("Vendor A");
-    expect(Object.keys(first)).not.toContain("PORel_PromiseDt");
-    expect(Object.keys(first)).not.toContain("earliestN");
-    expect(Object.keys(first)).not.toContain("OrderBy");
+    expect(rows.some((row) => String(row.myText3 ?? "").includes("Vendor A"))).toBe(false);
+    expect(Object.keys(rows[0] ?? {})).not.toContain("PORel_PromiseDt");
+    expect(Object.keys(rows[0] ?? {})).not.toContain("earliestN");
+    expect(Object.keys(rows[0] ?? {})).not.toContain("OrderBy");
+  });
+
+  test("drops XML fields that are not required or used by the loader", async () => {
+    const tempDir = await fs.mkdtemp(path.join(os.tmpdir(), "priorsart-xml-project-"));
+    await writeMinimalXmlFixture(tempDir);
+
+    const tables = await readXmlSourceTables(tempDir, {
+      warn: () => undefined,
+      error: () => undefined,
+      incrementDroppedRows: () => undefined,
+    } as never);
+
+    const supplyRow = tables.rowsByFile.supplies[0] ?? {};
+    expect(supplyRow.PegSupMst_PartNum).toBe("COMP-200");
+    expect(Object.keys(supplyRow)).not.toContain("PegSupMst_UnusedField");
+    expect(Object.keys(supplyRow)).not.toContain("Calculated_UnusedField");
   });
 });

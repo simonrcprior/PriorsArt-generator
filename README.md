@@ -119,11 +119,16 @@ The XML adapter expects these files in one folder:
 - `PEGJOBINFOSP2.xml`
 - `PEGLINK.xml`
 - `PEGPODETAIL.xml`
-- `PEGSALESORDER3.xml`
 - `PEGSUPMST.xml`
 - `Time Phase Material Requirement_447293.xml` (part descriptions)
 
 If any are missing, generation still runs and logs warnings in `quality.json` and manifest quality summary.
+
+When `--xmlConfig` is not provided, the loader can infer each XML file type by matching required field signatures (equivalent to the `reqd` tab approach):
+- The report type is inferred from the required fields for that type.
+- Optional fields (example `JobHead_CommitDate_c`) are not required for detection.
+- If inference fails for a type, the loader falls back to the default filename for that type.
+- During XML ingest, the adapter keeps only the required fields and the small set of loader-used computed fields; extra XML fields are ignored at load time.
 
 ### XML config manifest (explicit mode)
 
@@ -139,7 +144,6 @@ Example:
 		"jobs": "PEGJOBINFOSP2.xml",
 		"links": "PEGLINK.xml",
 		"poDetails": "PEGPODETAIL.xml",
-		"salesOrders": "PEGSALESORDER3.xml",
 		"supplies": "PEGSUPMST.xml",
 		"partDescriptions": "Time Phase Material Requirement_447293.xml"
 	}

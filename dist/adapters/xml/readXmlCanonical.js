@@ -14,7 +14,6 @@ const XML_FILE_KEYS = [
     "jobs",
     "links",
     "poDetails",
-    "salesOrders",
     "supplies",
     "partDescriptions",
 ];
@@ -23,9 +22,89 @@ const DEFAULT_XML_FILE_MAP = {
     jobs: "PEGJOBINFOSP2.xml",
     links: "PEGLINK.xml",
     poDetails: "PEGPODETAIL.xml",
-    salesOrders: "PEGSALESORDER3.xml",
     supplies: "PEGSUPMST.xml",
     partDescriptions: "Time Phase Material Requirement_447293.xml",
+};
+const XML_REQUIRED_FIELDS = {
+    links: [
+        "PegLink_Company",
+        "PegLink_PeggedQty",
+        "PegLink_PartNum",
+        "PegLink_Plant",
+        "PegLink_DemandSeq",
+        "PegLink_SupplySeq",
+    ],
+    jobs: [
+        "JobHead_Company",
+        "JobHead_Plant",
+        "JobHead_JobNum",
+        "JobHead_PartNum",
+        "JobOper_OprSeq",
+        "JobOper_OpCode",
+        "JobOper_RunQty",
+        "JobOper_EstSetHours",
+        "JobOper_OpComplete",
+        "JobOper_StartDate",
+        "JobOper_EstProdHours",
+        "JobOper_DueDate",
+    ],
+    demands: [
+        "PegDmdMst_Company",
+        "PegDmdMst_Plant",
+        "PegDmdMst_DemandSeq",
+        "PegDmdMst_DemandOrdNum",
+        "PegDmdMst_DemandOrdLine",
+        "PegDmdMst_DemandOrdRel",
+        "PegDmdMst_PartNum",
+        "PegDmdMst_DemandType",
+        "PegDmdMst_DemandDate",
+        "PegDmdMst_DemandQty",
+        "PegDmdMst_PeggedQty",
+    ],
+    supplies: [
+        "PegSupMst_Company",
+        "PegSupMst_Plant",
+        "PegSupMst_SupplySeq",
+        "PegSupMst_SupplyOrdNum",
+        "PegSupMst_SupplyOrdLine",
+        "PegSupMst_SupplyOrdRel",
+        "PegSupMst_PartNum",
+        "PegSupMst_SupplyDate",
+        "PegSupMst_SupplyQty",
+    ],
+    poDetails: [
+        "PORel_PONum",
+        "PORel_POLine",
+        "PORel_PORelNum",
+        "PODetail_PartNum",
+    ],
+    partDescriptions: ["txtPartNum", "txtPartDescription", "txtCalc_DspLeadTime2"],
+};
+const XML_ALLOWED_FIELDS = {
+    demands: [...XML_REQUIRED_FIELDS.demands],
+    jobs: [
+        ...XML_REQUIRED_FIELDS.jobs,
+        "Calculated_jobhead_jobnum",
+        "Calculated_RemainingEST",
+        "JobHead_CommitDate_c",
+    ],
+    links: [...XML_REQUIRED_FIELDS.links, "PegLink_PegNum"],
+    poDetails: [
+        ...XML_REQUIRED_FIELDS.poDetails,
+        "Calculated_openqty",
+        "PORel_PromiseDt",
+        "PORel_DueDate",
+        "POHeader_OrderDate",
+        "PORel_RelQty",
+        "Vendor_Name",
+    ],
+    supplies: [
+        ...XML_REQUIRED_FIELDS.supplies,
+        "Calculated_ReportDate",
+        "PegSupMst_ReportDate",
+        "PegSupMst_SupplyType",
+    ],
+    partDescriptions: [...XML_REQUIRED_FIELDS.partDescriptions],
 };
 const parser = new fast_xml_parser_1.XMLParser({
     ignoreAttributes: false,
@@ -61,6 +140,20 @@ function normalizeXmlDate(value) {
         return stringValue.slice(0, 10);
     }
     return value;
+}
+function projectXmlRow(record, allowedFields) {
+    const projected = {};
+    for (const field of allowedFields) {
+        if (field in record) {
+            projected[field] = record[field];
+            continue;
+        }
+        const attributeField = `@_${field}`;
+        if (attributeField in record) {
+            projected[field] = record[attributeField];
+        }
+    }
+    return projected;
 }
 function mapSupplyTypeToCanonical(value) {
     const t = (value ?? "").toUpperCase();
@@ -178,12 +271,12 @@ function buildLinkHierarchy(links, demandMetaBySeq, demandSeqsByOrderNum, supply
     }
     return hierarchyByLinkId;
 }
-function collectResultsNodes(node, acc) {
+function collectResultsNodes(node, key, acc) {
     if (!node || typeof node !== "object") {
         return;
     }
     if (Array.isArray(node)) {
-        node.forEach((item) => collectResultsNodes(item, acc));
+        node.forEach((item) => collectResultsNodes(item, key, acc));
         return;
     }
     const record = node;
@@ -192,23 +285,23 @@ function collectResultsNodes(node, acc) {
         if (Array.isArray(resultsNode)) {
             for (const entry of resultsNode) {
                 if (entry && typeof entry === "object") {
-                    acc.push(entry);
+                    acc.push(projectXmlRow(entry, XML_ALLOWED_FIELDS[key]));
                 }
             }
         }
         else if (resultsNode && typeof resultsNode === "object") {
-            acc.push(resultsNode);
+            acc.push(projectXmlRow(resultsNode, XML_ALLOWED_FIELDS[key]));
         }
     }
     for (const value of Object.values(record)) {
-        collectResultsNodes(value, acc);
+        collectResultsNodes(value, key, acc);
     }
 }
-async function readResultsFromXml(filePath) {
+async function readResultsFromXml(filePath, key) {
     const xml = await promises_1.default.readFile(filePath, "utf8");
     const parsed = parser.parse(xml);
     const results = [];
-    collectResultsNodes(parsed, results);
+    collectResultsNodes(parsed, key, results);
     return results;
 }
 function collectPartDescriptionNodes(node, acc) {
@@ -240,6 +333,65 @@ async function readPartDescriptionsFromTimePhaseXml(filePath) {
     const results = [];
     collectPartDescriptionNodes(parsed, results);
     return results;
+}
+function hasXmlField(xml, fieldName) {
+    if (fieldName.startsWith("txt")) {
+        return xml.includes(` ${fieldName}=`) || xml.includes(`@_${fieldName}`) || xml.includes(`<${fieldName}>`);
+    }
+    return xml.includes(`<${fieldName}>`) || xml.includes(`@_${fieldName}`);
+}
+function scoreXmlForKey(xml, key) {
+    const required = XML_REQUIRED_FIELDS[key];
+    let score = 0;
+    for (const field of required) {
+        if (hasXmlField(xml, field)) {
+            score += 1;
+        }
+    }
+    return score;
+}
+async function detectXmlFilesByRequiredFields(basePath, diagnostics) {
+    const entries = await promises_1.default.readdir(basePath, { withFileTypes: true });
+    const xmlFiles = entries
+        .filter((entry) => entry.isFile() && node_path_1.default.extname(entry.name).toLowerCase() === ".xml")
+        .map((entry) => entry.name);
+    const xmlByFileName = new Map();
+    for (const fileName of xmlFiles) {
+        const filePath = node_path_1.default.join(basePath, fileName);
+        try {
+            xmlByFileName.set(fileName, await promises_1.default.readFile(filePath, "utf8"));
+        }
+        catch (error) {
+            diagnostics.warn({
+                code: "XML_FILE_READ_FAILED",
+                message: `Unable to inspect '${fileName}' for auto-detection: ${error instanceof Error ? error.message : String(error)}`,
+                dataset: "manifest",
+            });
+        }
+    }
+    const detected = {};
+    const usedFiles = new Set();
+    for (const key of XML_FILE_KEYS) {
+        let bestFile;
+        let bestScore = -1;
+        const requiredCount = XML_REQUIRED_FIELDS[key].length;
+        for (const [fileName, xml] of xmlByFileName.entries()) {
+            if (usedFiles.has(fileName)) {
+                continue;
+            }
+            const score = scoreXmlForKey(xml, key);
+            if (score > bestScore) {
+                bestScore = score;
+                bestFile = fileName;
+            }
+        }
+        if (!bestFile || bestScore < requiredCount) {
+            continue;
+        }
+        detected[key] = bestFile;
+        usedFiles.add(bestFile);
+    }
+    return detected;
 }
 function isXmlFileKey(value) {
     return XML_FILE_KEYS.includes(value);
@@ -321,46 +473,6 @@ async function readXmlCanonical(inputPath, datePolicy, diagnostics, xmlConfigPat
     const supplyMetaBySeq = new Map();
     const xmlLinkInfos = [];
     const today = new Date().toISOString().slice(0, 10);
-    const salesRows = rowsByFile.salesOrders;
-    salesRows.forEach((row, index) => {
-        const orderNum = asString(row.OrderRel_OrderNum);
-        const orderLine = asString(row.OrderRel_OrderLine) ?? "0";
-        const orderRel = asString(row.OrderRel_OrderRelNum) ?? "0";
-        const partNumber = asString(row.OrderDtl_PartNum);
-        const quantity = asNumber(row.Calculated_BackOrder) ?? asNumber(row.PegDmdMst_DemandQty);
-        if (!orderNum || !partNumber || quantity === undefined) {
-            diagnostics.warn({
-                code: "XML_SALES_ROW_SKIPPED",
-                message: "Skipped sales row due to missing order number, part number, or quantity",
-                dataset: "salesOrders",
-                row: index + 1,
-            });
-            diagnostics.incrementDroppedRows();
-            return;
-        }
-        const dueDate = (0, datePolicy_1.parseDateWithPolicy)(normalizeXmlDate(row.OrderRel_ReqDate), datePolicy.defaultDateOrder, diagnostics, {
-            dataset: "salesOrders",
-            row: index + 1,
-            field: "OrderRel_ReqDate",
-        }).isoDate;
-        if (!dueDate) {
-            diagnostics.incrementDroppedRows();
-            return;
-        }
-        const id = `SO-${orderNum}-${orderLine}-${orderRel}`;
-        if (!salesOrderMap.has(id)) {
-            salesOrderMap.set(id, {
-                id,
-                orderNumber: orderNum,
-                partNumber,
-                quantity,
-                dueDate,
-            });
-        }
-        if (!partMap.has(partNumber)) {
-            partMap.set(partNumber, { partNumber });
-        }
-    });
     const jobRows = rowsByFile.jobs;
     jobRows.forEach((row, index) => {
         const jobNum = asString(row.Calculated_jobhead_jobnum) || asString(row.JobHead_JobNum);
@@ -932,18 +1044,36 @@ async function readXmlCanonical(inputPath, datePolicy, diagnostics, xmlConfigPat
 }
 async function readXmlSourceTables(inputPath, diagnostics, xmlConfigPath) {
     const { basePath, fileMap } = await resolveXmlSourceConfig(inputPath, diagnostics, xmlConfigPath);
+    const effectiveFileMap = { ...fileMap };
+    if (!xmlConfigPath) {
+        try {
+            const detected = await detectXmlFilesByRequiredFields(basePath, diagnostics);
+            for (const key of XML_FILE_KEYS) {
+                const detectedFile = detected[key];
+                if (detectedFile) {
+                    effectiveFileMap[key] = detectedFile;
+                }
+            }
+        }
+        catch (error) {
+            diagnostics.warn({
+                code: "XML_AUTODETECT_FAILED",
+                message: `Auto-detection of XML file types failed, using default names: ${error instanceof Error ? error.message : String(error)}`,
+                dataset: "manifest",
+            });
+        }
+    }
     const loadedFiles = [];
     const rowsByFile = {
         demands: [],
         jobs: [],
         links: [],
         poDetails: [],
-        salesOrders: [],
         supplies: [],
         partDescriptions: [],
     };
     for (const key of XML_FILE_KEYS) {
-        const fileName = fileMap[key];
+        const fileName = effectiveFileMap[key];
         const filePath = node_path_1.default.isAbsolute(fileName) ? fileName : node_path_1.default.join(basePath, fileName);
         try {
             await promises_1.default.access(filePath);
@@ -961,7 +1091,7 @@ async function readXmlSourceTables(inputPath, diagnostics, xmlConfigPath) {
             rowsByFile[key] =
                 key === "partDescriptions"
                     ? await readPartDescriptionsFromTimePhaseXml(filePath)
-                    : await readResultsFromXml(filePath);
+                    : await readResultsFromXml(filePath, key);
             loadedFiles.push(fileName);
         }
         catch (error) {
