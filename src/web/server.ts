@@ -471,6 +471,10 @@ const html = `<!doctype html>
       color: #177245;
       font-weight: 700;
     }
+    .check-pending {
+      color: #b88400;
+      font-weight: 700;
+    }
     .check-fail {
       color: #b43a47;
       font-weight: 700;
@@ -579,7 +583,7 @@ const html = `<!doctype html>
           <div class="status"><strong id="stage">Idle</strong><span id="percent">0%</span></div>
           <div class="progress-bar"><div id="bar"></div></div>
           <div id="fileChecks" class="checks"></div>
-          <div class="checks-legend">Legend: <span class="check-ok">Chosen</span> means the file has been selected, <span class="check-ok">✓ Loaded</span> means required fields matched after generate runs, and <span class="check-fail">✗ Missing</span> means required fields were not found. Optional rows can show as missing without blocking generation.</div>
+          <div class="checks-legend">Legend: <span class="check-pending">- Pending</span> means a likely file is matched based on filename, <span class="check-ok">✓ Loaded</span> means required fields matched after generate runs, and <span class="check-fail">✗ Missing</span> means required fields were not found. Optional rows can show as missing without blocking generation.</div>
           <div id="message" class="message"></div>
           <a id="download" class="download" href="#" style="display:none" download>Download output</a>
         </div>
@@ -688,8 +692,9 @@ const html = `<!doctype html>
       }
 
       fileChecksEl.innerHTML = visibleChecks.map((check) => {
-        const statusText = check.state === 'chosen' ? 'Chosen' : (check.ok ? '✓ Loaded' : '✗ Missing');
-        const statusClass = check.ok ? 'check-ok' : 'check-fail';
+        const isPending = check.state === 'chosen' || check.state === 'pending';
+        const statusText = isPending ? '- Pending' : (check.ok ? '✓ Loaded' : '✗ Missing');
+        const statusClass = isPending ? 'check-pending' : (check.ok ? 'check-ok' : 'check-fail');
         const detail = check.fileName ? check.fileName : (check.detail || '');
         return '<div class="check-row">' +
           '<div><strong>' + escapeHtml(check.label || '') + '</strong><div>' + escapeHtml(detail) + '</div></div>' +
@@ -815,7 +820,7 @@ const html = `<!doctype html>
             label: spec.label,
             ok: true,
             fileName: matchedFile.webkitRelativePath || matchedFile.relativePath || matchedFile.name,
-            detail: 'Chosen',
+            detail: 'Pending',
             state: 'chosen',
           };
         }
@@ -824,8 +829,8 @@ const html = `<!doctype html>
           key: spec.key,
           label: spec.label,
           ok: false,
-          detail: selectedFiles.length ? 'Missing' : 'Pending',
-          state: selectedFiles.length ? 'missing' : 'pending',
+          detail: 'Missing',
+          state: 'missing',
         };
       });
     }
