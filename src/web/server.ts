@@ -1032,7 +1032,7 @@ const html = `<!doctype html>
     }
 
     dropzone.addEventListener('click', (event) => {
-      if (event.target instanceof Element && event.target.closest('.file-actions')) {
+      if (event.target instanceof Element && event.target.closest('.file-actions, .files, .file-row')) {
         return;
       }
       fileInput.click();
@@ -1095,15 +1095,22 @@ const html = `<!doctype html>
       renderFiles();
       syncDropzoneHeight();
     });
+    filesEl.addEventListener('pointerdown', (event) => {
+      if (event.target instanceof HTMLElement && event.target.closest('.file-row')) {
+        event.stopPropagation();
+      }
+    });
     filesEl.addEventListener('click', (event) => {
       const target = event.target;
       if (!(target instanceof HTMLElement)) {
         return;
       }
+      event.stopPropagation();
       const removeBtn = target.closest('.file-remove');
       if (!removeBtn) {
         return;
       }
+      event.preventDefault();
       const fileKey = removeBtn.getAttribute('data-file-key');
       if (!fileKey) {
         return;
